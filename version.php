@@ -26,8 +26,8 @@ defined('MOODLE_INTERNAL') || die();
 
 $plugin->component = 'mod_adele';
 $plugin->supported = [405, 502];
-$plugin->release = '0.4.1';
-$plugin->version = 2026083000;
+$plugin->release = '0.5.0';
+$plugin->version = 2026100100;
 $plugin->requires = 2024100700;
 $plugin->maturity = MATURITY_ALPHA;
 // The floors must demand the siblings that actually speak host_policy: an
