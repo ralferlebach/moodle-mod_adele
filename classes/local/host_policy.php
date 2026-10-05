@@ -245,7 +245,7 @@ class host_policy {
             return false;
         }
         [$insql, $inparams] = $DB->get_in_or_equal(array_unique($courseids), SQL_PARAMS_NAMED);
-        $now = time();
+        $now = \core\di::get(\core\clock::class)->time();
         $sql = "SELECT 1
                   FROM {user_enrolments} ue
                   JOIN {enrol} e ON e.id = ue.enrolid
@@ -373,7 +373,7 @@ class host_policy {
         }
 
         [$insql, $inparams] = $DB->get_in_or_equal($courseids, SQL_PARAMS_NAMED);
-        $now = time();
+        $now = \core\di::get(\core\clock::class)->time();
         $userids = $DB->get_fieldset_sql(
             "SELECT DISTINCT ue.userid
                FROM {user_enrolments} ue

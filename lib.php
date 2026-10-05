@@ -57,7 +57,7 @@ function adele_supports($feature) {
 function adele_add_instance($moduleinstance, $mform = null) {
     global $DB;
 
-    $moduleinstance->timecreated = time();
+    $moduleinstance->timecreated = \core\di::get(\core\clock::class)->time();
 
     // The autocomplete-multiple element in mod_form.php submits an array, but
     // some generator/import paths (e.g. tests/backup_restore_test.php) supply
@@ -93,7 +93,7 @@ function adele_add_instance($moduleinstance, $mform = null) {
 function adele_update_instance($moduleinstance, $mform = null) {
     global $DB;
 
-    $moduleinstance->timemodified = time();
+    $moduleinstance->timemodified = \core\di::get(\core\clock::class)->time();
     $moduleinstance->id = $moduleinstance->instance;
 
     // The PREVIOUS state, read before the update overwrites it. Without it
