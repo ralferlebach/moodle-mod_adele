@@ -160,7 +160,7 @@ test.describe('ADELE-E2E-H1 — embedding a path into a course carries its parti
   });
 });
 
-test.describe('ADELE-E2E-H2 — leaving the host course withdraws the access it granted', () => {
+test.describe('ADELE-E2E-H1b — leaving the host course withdraws the access it granted', () => {
   test('unenrolling one participant closes their access, and only theirs', async ({ page }) => {
     const hostcourse = fixture('ADELE_FIXTURE_HOST_COURSE');
     const leaving = fixture('ADELE_FIXTURE_HOST_MEMBER_1');
@@ -227,6 +227,52 @@ test.describe('ADELE-E2E-H2 — leaving the host course withdraws the access it 
         page,
         entrycourse,
         'the other member is still in the host course and must keep their access'
+      );
+    });
+  });
+});
+
+test.describe('ADELE-E2E-H2 — the second participant source: the starting node course', () => {
+  test('people in the entry course are carried, outsiders are not', async ({ page }) => {
+    const hostcourse = fixture('ADELE_FIXTURE_HOST_COURSE_2');
+    const entrylearner = fixture('ADELE_FIXTURE_ENTRY_LEARNER');
+    const outsider = fixture('ADELE_FIXTURE_HOST_OUTSIDER');
+    const activityname = 'E2E Startknotenquelle ' + Date.now();
+
+    await test.step('precondition: neither of them is in the host course', async () => {
+      for (const person of [entrylearner, outsider]) {
+        await loginAs(page, person, fixturePassword());
+        await expectCourseClosed(page, hostcourse, `${person} has not been carried anywhere yet`);
+      }
+    });
+
+    await test.step('a teacher embeds the path with the starting node as the source', async () => {
+      await loginAs(page, env.adminUser, env.adminPassword);
+      await page.goto(`/course/modedit.php?add=adele&course=${hostcourse}&section=0`);
+      await page.locator('#id_name').fill(activityname);
+      await chooseInAutocomplete(page, 'Chosen Learning Path', referencePath.name);
+      // The source under test, and the one thing that differs from H1.
+      await chooseInAutocomplete(page, 'Learning path enrolment', 'for people enrolled in a starting node');
+      await page.getByRole('button', { name: /Save and return to course|Speichern und zum Kurs/i }).click();
+      await expect(page.getByRole('link', { name: activityname })).toBeVisible();
+    });
+
+    await test.step('the person enrolled in the entry course reaches the host course', async () => {
+      await loginAs(page, entrylearner, fixturePassword());
+      await expectCourseOpenAfterTasks(
+        page,
+        hostcourse,
+        'somebody enrolled in the starting node course must be carried into the host course'
+      );
+    });
+
+    await test.step('somebody outside every course of the path is not', async () => {
+      drainTaskQueue();
+      await loginAs(page, outsider, fixturePassword());
+      await expectCourseClosed(
+        page,
+        hostcourse,
+        'this source must not carry a person who is in no course of the path'
       );
     });
   });
