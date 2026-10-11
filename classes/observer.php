@@ -132,6 +132,27 @@ class mod_adele_observer {
     }
 
     /**
+     * Observer for local_adele's user_path_updated: a learner's path has been
+     * recomputed - re-evaluate the completion of the activities that embed it
+     * with the rule "learning path finished".
+     *
+     * @param base $data
+     * @return base
+     */
+    public static function learner_path_updated($data) {
+        if (!self::is_local_adele_available()) {
+            return $data;
+        }
+        // The event carries the path as an object or, restored, as an array.
+        $userpath = (array) ($data->other['userpath'] ?? []);
+        \mod_adele\local\path_completion::update_activities(
+            (int) ($userpath['learning_path_id'] ?? 0),
+            (int) ($userpath['user_id'] ?? 0)
+        );
+        return $data;
+    }
+
+    /**
      * Observer for user_enrolment_deleted.
      *
      * Options 2/3 grant host-course access as a CONSEQUENCE of node-course

@@ -46,4 +46,13 @@
         'eventname' => '\core\event\user_enrolment_deleted',
         'callback' => 'mod_adele_observer::user_enrolment_deleted',
     ],
+    [
+        // Completion rule "learning path finished". local_adele recomputes
+        // and STORES the learner's path in its own observer of this event;
+        // the low priority puts this observer after it, so it reads the new
+        // state (path_completion_test pins the order).
+        'eventname' => '\local_adele\event\user_path_updated',
+        'callback' => 'mod_adele_observer::learner_path_updated',
+        'priority' => -100,
+    ],
  ];
