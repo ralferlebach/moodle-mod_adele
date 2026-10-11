@@ -117,7 +117,14 @@ class mod_adele_observer {
                     // Source 1 counts course membership - but not membership
                     // that ADELE created itself, e.g. the host enrolment of
                     // another learning path embedded here (#37).
-                    if (in_array('1', $options) && ($data->other['enrol'] ?? '') !== 'adele') {
+                    // ... and only as a participant, not as a teacher of
+                    // the course (local_adele #587). The role follows the
+                    // enrolment event; role_changed() below comes back then.
+                    if (
+                        in_array('1', $options)
+                        && ($data->other['enrol'] ?? '') !== 'adele'
+                        && host_policy::has_foreign_enrolment((int) $data->relateduserid, [(int) $data->courseid])
+                    ) {
                         // Subscribe user to learning path.
                         $learningpath = learning_paths::get_learning_path_by_id($adelelp->learningpathid);
                         if ($learningpath) {
@@ -129,6 +136,41 @@ class mod_adele_observer {
         }
         self::sync_host_access_for_node_enrolment($data);
         return $data;
+    }
+
+    /**
+     * Observer for role_assigned and role_unassigned in a course: whether
+     * somebody takes part in a course is a matter of the role, so a role
+     * change is re-evaluated exactly like an enrolment (local_adele #587).
+     *
+     * Gaining the participant's role subscribes (source "this course") and
+     * grants host access (sources 2/3); losing it takes host access back.
+     * Taking the SUBSCRIPTION back is enrol_adele's part - it owns the rule
+     * of who is still carried, and the grace period before history is
+     * deleted.
+     *
+     * @param base $event
+     * @return base
+     */
+    public static function role_changed($event) {
+        if (!self::is_local_adele_available()) {
+            return $event;
+        }
+        $context = $event->get_context();
+        if (!$context || $context->contextlevel != CONTEXT_COURSE) {
+            return $event;
+        }
+        // ADELE's own role bookkeeping is not somebody changing sides (#37).
+        if (($event->other['component'] ?? '') === 'enrol_adele') {
+            return $event;
+        }
+        self::user_enrolment_created((object) [
+            'courseid' => (int) $context->instanceid,
+            'relateduserid' => (int) $event->relateduserid,
+            'userid' => (int) $event->userid,
+            'other' => ['enrol' => ''],
+        ]);
+        return $event;
     }
 
     /**
