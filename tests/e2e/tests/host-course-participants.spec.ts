@@ -62,14 +62,36 @@ async function chooseInAutocomplete(page: Page, label: string, entry: string): P
   const listid = await input.getAttribute('aria-controls');
   const option = (listid ? page.locator(`[id="${listid}"]`) : page)
     .getByRole('option', { name: entry, exact: true }).first();
-  await input.click();
-  await input.fill(entry);
-  await option.click();
-  // Leave the field with Tab: it closes the suggestion list (otherwise the
-  // next click on the page only closes the list) and, unlike clearing the
-  // input, keeps the choice - in a single-choice autocomplete the text in
-  // the input IS the choice.
-  await input.press('Tab');
+  // What the form will actually submit: the hidden <select> that Moodle's
+  // autocomplete fills. A click on a suggestion is not proof - under load a
+  // choice was lost (the second participant source never reached the form,
+  // and the chain failed later for a reason that looked like the product's).
+  const field = page.locator('form.mform select').filter({
+    has: page.locator('option', { hasText: entry }),
+  }).first();
+  const chosen = async (): Promise<boolean> =>
+    (await field.locator('option:checked').allInnerTexts()).some((text) => text.trim() === entry);
+
+  for (let attempt = 0; attempt < 3 && !(await chosen()); attempt++) {
+    // Typed like a person: Moodle opens its list from its own key handlers,
+    // which a one-shot fill() can miss when the page is busy.
+    await input.click();
+    await input.fill('');
+    await input.pressSequentially(entry.slice(0, 20), { delay: 20 });
+    await option.waitFor({ state: 'visible', timeout: 5_000 }).catch(() => undefined);
+    if (!(await option.isVisible())) {
+      await input.press('ArrowDown');
+      await option.waitFor({ state: 'visible', timeout: 5_000 }).catch(() => undefined);
+    }
+    if (await option.isVisible()) {
+      await option.click();
+    }
+    // Leave the field with Tab: it closes the suggestion list (otherwise the
+    // next click on the page only closes the list) and keeps the choice.
+    await input.press('Tab');
+    await expect.poll(chosen, { timeout: 5_000 }).toBe(true).catch(() => undefined);
+  }
+  expect(await chosen(), `"${entry}" must be selected in "${label}"`).toBe(true);
 }
 
 /**
