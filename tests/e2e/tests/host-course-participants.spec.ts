@@ -55,9 +55,21 @@ import {
  */
 async function chooseInAutocomplete(page: Page, label: string, entry: string): Promise<void> {
   const input = page.getByRole('combobox', { name: label });
+  // Only in THIS field's suggestion list: Moodle links it to the input via
+  // aria-controls. A page-wide search also finds the entries already
+  // selected - in this field and in the other autocomplete - which are
+  // options too.
+  const listid = await input.getAttribute('aria-controls');
+  const option = (listid ? page.locator(`[id="${listid}"]`) : page)
+    .getByRole('option', { name: entry, exact: true }).first();
   await input.click();
   await input.fill(entry);
-  await page.getByRole('option', { name: entry, exact: true }).first().click();
+  await option.click();
+  // Leave the field with Tab: it closes the suggestion list (otherwise the
+  // next click on the page only closes the list) and, unlike clearing the
+  // input, keeps the choice - in a single-choice autocomplete the text in
+  // the input IS the choice.
+  await input.press('Tab');
 }
 
 /**
