@@ -40,15 +40,19 @@
  *
  * P4 found three ways around the boundary (session protocol, part 30); they
  * are closed in local_adele and pinned here: rights that come from a course
- * count only in a course that embeds the path. Part 32 added the rest:
- * authority over a path means THIS path (managers, its editors) - an
- * assistant or a collaborator of some other path reads nothing here - and
- * the same boundary holds for changing a learner's path.
+ * count only in a course that embeds the path, and the same boundary holds
+ * for changing a learner's path.
+ *
+ * Building a path and teaching a course that uses it are two different
+ * things (local_adele #586, addendum of 2026-10-07): the ADELE manager, the
+ * collaborator of this path and the assistant get no learner data from
+ * building or managing paths - only a teacher of the embedding course does,
+ * and the site administrator.
  *
  * The path is embedded in a second course, E2EP2, as well, with a learner of
  * its own (Gamma). A roster belongs to its course (local_adele #588): Gamma is
  * on the same path and appears in none of E2EP's lists, nor Alpha and Beta in
- * E2EP2's; only authority over the path, asked outside any course, sees all.
+ * E2EP2's; only the site administrator, asking outside any course, sees all.
  *
  * Everybody enrolled in the embedding course is subscribed to the path, staff
  * included - the list therefore shows the teachers with 0/3 as well. The
@@ -248,10 +252,14 @@ test.describe('ADELE-E2E-P — learner data in a course that embeds a path', () 
       // are exact); here she is alone, and first of one.
       await expect.poll(() => embedding(page, 'SECOND'), { timeout: 60_000, intervals: [2_000, 5_000] })
         .toBe(`teacher view: ${GAMMA} | 0 | 0/3 | rank 1 | link`);
-      // Authority over the path, asked outside any course: the whole path.
+      // The site administrator, asked outside any course: the whole path.
+      expect(await roster(page, 1), 'administrator, system context').toBe(`${ALPHA}, ${BETA}, ${GAMMA}`);
+      expect(await roster(page, contextId('CM_ALL')), 'administrator, through the embedding in E2EP').toBe(`${ALPHA}, ${BETA}`);
+      // Used to get the same: the ADELE manager. Managing paths is no right
+      // over learners (#586, addendum).
       await loginAsPerson(page, 'MANAGER');
-      expect(await roster(page, 1), 'manager, system context').toBe(`${ALPHA}, ${BETA}, ${GAMMA}`);
-      expect(await roster(page, contextId('CM_ALL')), 'manager, through the embedding in E2EP').toBe(`${ALPHA}, ${BETA}`);
+      expect(await roster(page, 1), 'ADELE manager, system context').toBe('denied (nopermissions)');
+      expect(await roster(page, contextId('CM_ALL')), 'ADELE manager, through the embedding').toBe('denied (nopermissions)');
       await loginAsPerson(page, 'TEACHER');
     });
 
@@ -280,13 +288,15 @@ test.describe('ADELE-E2E-P — learner data in a course that embeds a path', () 
       // local/adele:viewparticipants - and changes nothing (next step, and P4).
       ['TUTOR', `teacher view: ${bothlinked}`, `teacher view: ${bothlinked}`, `${ALPHA}, ${BETA}`, BETA,
         'teacher without editing rights'],
-      // Collaborator of THIS path, enrolled as a participant: the same.
-      ['COLLABORATOR', 'participant view: neither learner', `participant view: ${both}`, `${ALPHA}, ${BETA}`, BETA,
-        'collaborator of the path'],
+      // Collaborator of THIS path, enrolled as a participant: a participant -
+      // the own row only where the embedding says so, never a detail. Working
+      // on the path adds nothing (used to: the full roster and Beta's snapshot).
+      ['COLLABORATOR', 'participant view: neither learner', `participant view: ${both}`, 'neither learner',
+        'denied (nopermissions)', 'collaborator of the path, a participant here'],
       // The ADELE system roles are in no course: no page shows them the
-      // embedding. The server answers the manager, whose authority is about
-      // every path - and not the assistant, who edits another path, not this one.
-      ['MANAGER', 'no access', 'no access', `${ALPHA}, ${BETA}`, BETA, 'ADELE manager'],
+      // embedding, and the server answers neither - not the manager (used
+      // to), not the assistant.
+      ['MANAGER', 'no access', 'no access', 'denied (nopermissions)', 'denied (nopermissions)', 'ADELE manager'],
       ['ASSISTANT', 'no access', 'no access', 'denied (nopermissions)', 'denied (nopermissions)',
         'ADELE assistant (editor of another path)'],
       // Participant: the own row, or all - as the embedding says; never a detail.
@@ -407,6 +417,9 @@ test.describe('ADELE-E2E-P — learner data in a course that embeds a path', () 
         ['TUTOR', 'CM_OWN', 'a teacher of this course without editing rights'],
         ['COLLABORATOR', 'CM_OWN', 'a collaborator of the path who is a participant in the course'],
         ['ASSISTANT', 'CM_OWN', 'an assistant who edits another path'],
+        // Used to succeed: managing paths is no right over learners.
+        ['MANAGER', 'CM_OWN', 'an ADELE manager, through the embedding'],
+        ['MANAGER', 'SYSTEM', 'an ADELE manager, outside any course'],
         ['OUTSIDER', 'OTHER', 'a participant of another course, through that course'],
         // Used to succeed: Beta's node 3 was completed by a teacher of a course
         // that has nothing to do with the path.
@@ -417,7 +430,7 @@ test.describe('ADELE-E2E-P — learner data in a course that embeds a path', () 
           learningpathid: pathId(),
           userid: userId('B'),
           params,
-          contextid: contextId(context),
+          contextid: context === 'SYSTEM' ? 1 : contextId(context),
         });
         expect(answer.error, `${label}: the change must be refused`).toBe('nopermissions');
       }

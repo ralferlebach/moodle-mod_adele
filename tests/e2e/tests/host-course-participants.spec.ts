@@ -43,6 +43,7 @@ import {
   fixture,
   fixtureCourse,
   fixturePassword,
+  participantList,
   referencePath,
 } from '../support/fixtures';
 
@@ -430,15 +431,33 @@ test.describe('ADELE-E2E-H2 — two sources combined: this course AND the starti
   });
 });
 
+/**
+ * The last names on the learning path's own participant list of an
+ * embedding, as the administrator sees it in the course.
+ *
+ * @param page The page.
+ * @param hostcourse The course.
+ * @param activity The embedding's name.
+ */
+async function pathRoster(page: Page, hostcourse: string, activity: string): Promise<string[]> {
+  await loginAs(page, env.adminUser, env.adminPassword);
+  await page.goto(`/course/view.php?id=${hostcourse}`);
+  await page.getByRole('main').getByRole('link', { name: activity }).click();
+  await expect(page.locator('#adele-userlist-table tbody tr').first()).toBeVisible({ timeout: 60_000 });
+  await page.waitForLoadState('networkidle');
+  return (await participantList(page)).map((row) => row.split(' | ')[0]);
+}
+
 test.describe('ADELE-E2E-H3 — the host enrolment modes', () => {
   test('"hidden": the person is listed as suspended and cannot enter the host course', async ({ page }) => {
     const hostcourse = fixture('ADELE_FIXTURE_HOST_COURSE_4');
     const entrylearner = fixture('ADELE_FIXTURE_ENTRY_LEARNER');
     const name = fixture('ADELE_FIXTURE_ENTRY_LEARNER_NAME');
+    const activity = 'E2E Modus hidden ' + Date.now();
 
     await test.step('a teacher embeds the path, starting node source, mode "hidden"', async () => {
       await loginAs(page, env.adminUser, env.adminPassword);
-      await embedWith(page, hostcourse, 'E2E Modus hidden ' + Date.now(), [SOURCE_START], 'hidden (as a suspended enrolment)');
+      await embedWith(page, hostcourse, activity, [SOURCE_START], 'hidden (as a suspended enrolment)');
       drainTaskQueue();
     });
 
@@ -455,6 +474,14 @@ test.describe('ADELE-E2E-H3 — the host enrolment modes', () => {
     await test.step('real access: the host course stays closed to them', async () => {
       await loginAs(page, entrylearner, fixturePassword());
       await expectCourseClosed(page, hostcourse, 'a suspended enrolment must not open the course');
+    });
+
+    await test.step('the learning path\'s list in the course: there - suspended by ADELE is still a learner', async () => {
+      // local_adele #588 (addendum): a suspension ADELE made itself counts,
+      // one made by hand does not (participants-by-role.spec.ts).
+      const names = await pathRoster(page, hostcourse, activity);
+      const lastname = name.split(' ').slice(1).join(' ') || name;
+      expect(names, `"${name}" must be on the path's list`).toContain(lastname);
     });
   });
 

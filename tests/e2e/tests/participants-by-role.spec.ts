@@ -52,6 +52,7 @@ import {
   fixturePassword,
   participantList,
   setCourseRoles,
+  setEnrolmentStatus,
 } from '../support/fixtures';
 
 const SWITCH = 'Privacy Switch';
@@ -111,6 +112,42 @@ test.describe('ADELE-E2E-P — who takes part: the role decides (#587)', () => {
       expect(await listed(page), 'no waiting for a task: the list follows the role').not.toContain(SWITCH);
       await asSwitch(page);
       await expectCourseClosedAfterTasks(page, t01, 'who only teaches the course loses the starting course');
+    });
+  });
+
+  test('suspended by hand: off the list of the course, the path stays (local_adele #588)', async ({ page }) => {
+    // The collaborator sits in the course as an ordinary participant, with a
+    // manual enrolment, and is a learner of the path.
+    const host = fixture('ADELE_FIXTURE_P_HOST');
+    const t01 = fixtureCourse('T01');
+    const person = 'Privacy Collaborator';
+    const asPerson = () => loginAs(page, fixture('ADELE_FIXTURE_P_COLLABORATOR'), fixturePassword());
+
+    await test.step('the precondition: listed, and in the starting course', async () => {
+      drainTaskQueue();
+      expect(await listed(page)).toContain(person);
+      await asPerson();
+      await expectCourseOpenAfterTasks(page, t01, 'a participant of the course is on the path');
+    });
+
+    await test.step('a teacher suspends the enrolment on Moodle\'s participants page', async () => {
+      await loginAs(page, env.adminUser, env.adminPassword);
+      await setEnrolmentStatus(page, host, person, 'Suspended');
+      drainTaskQueue();
+    });
+
+    await test.step('off the learning path\'s list of the course - and still on the path', async () => {
+      expect(await listed(page), 'taken out of the course by hand').not.toContain(person);
+      // A suspension in the host course is without consequence for the path
+      // itself (earlier decision): the starting course stays open.
+      await asPerson();
+      expect(await courseAccess(page, t01), 'the path is untouched').toBe('open');
+    });
+
+    await test.step('reactivated: back on the list', async () => {
+      await loginAs(page, env.adminUser, env.adminPassword);
+      await setEnrolmentStatus(page, host, person, 'Active');
+      expect(await listed(page)).toContain(person);
     });
   });
 });
