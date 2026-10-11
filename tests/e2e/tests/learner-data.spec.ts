@@ -39,7 +39,10 @@
  *
  * P4 found three ways around the boundary (session protocol, part 30); they
  * are closed in local_adele and pinned here: rights that come from a course
- * count only in a course that embeds the path.
+ * count only in a course that embeds the path. Part 32 added the rest:
+ * authority over a path means THIS path (managers, its editors) - an
+ * assistant or a collaborator of some other path reads nothing here - and
+ * the same boundary holds for changing a learner's path.
  *
  * Everybody enrolled in the embedding course is subscribed to the path, staff
  * included - the list therefore shows the teachers with 0/3 as well. The
@@ -255,13 +258,15 @@ test.describe('ADELE-E2E-P — learner data in a course that embeds a path', () 
       // "only own results" and offers no detail view.
       ['TUTOR', 'participant view: neither learner', `participant view: ${both}`, `${ALPHA}, ${BETA}`, BETA,
         'teacher without editing rights'],
-      // Collaborator of this path, enrolled as a participant: the same.
+      // Collaborator of THIS path, enrolled as a participant: the same.
       ['COLLABORATOR', 'participant view: neither learner', `participant view: ${both}`, `${ALPHA}, ${BETA}`, BETA,
         'collaborator of the path'],
       // The ADELE system roles are in no course: no page shows them the
-      // embedding - the server answers them, their authority is about paths.
+      // embedding. The server answers the manager, whose authority is about
+      // every path - and not the assistant, who edits another path, not this one.
       ['MANAGER', 'no access', 'no access', `${ALPHA}, ${BETA}`, BETA, 'ADELE manager'],
-      ['ASSISTANT', 'no access', 'no access', `${ALPHA}, ${BETA}`, BETA, 'ADELE assistant'],
+      ['ASSISTANT', 'no access', 'no access', 'denied (nopermissions)', 'denied (nopermissions)',
+        'ADELE assistant (editor of another path)'],
       // Participant: the own row, or all - as the embedding says; never a detail.
       ['A', `participant view: ${ALPHA_ROW}`, `participant view: ${both}`, ALPHA, 'denied (nopermissions)',
         'participant'],
@@ -326,6 +331,50 @@ test.describe('ADELE-E2E-P — learner data in a course that embeds a path', () 
       await page.waitForLoadState('networkidle');
       await expect(page.locator('body')).not.toContainText(BETA);
       await expect(page.locator('[data-testid^="learningpath-node-"]')).toHaveCount(0);
+    });
+
+    await test.step("nobody without a right here changes Beta's path", async () => {
+      // What a teacher's save sends: the learner's nodes, here with a master
+      // completion on node 3. Built from Beta's real snapshot, so a call that
+      // got through would do exactly what the path view does.
+      await loginAsPerson(page, 'ADMIN');
+      const snapshot = await callService(page, 'local_adele_get_user_path_relation', {
+        learningpathid: pathId(),
+        userpathid: userId('B'),
+        contextid: contextId('CM_OWN'),
+      });
+      const nodes = JSON.parse((snapshot.data as { json: string }).json).tree.nodes as
+        { id: string; data: { completion?: { master?: Record<string, unknown> } } }[];
+      for (const node of nodes) {
+        if (node.id === 'dndnode_3') {
+          node.data.completion = { ...(node.data.completion || {}) };
+          node.data.completion.master = { ...(node.data.completion.master || {}), completion: true };
+        }
+      }
+      const params = JSON.stringify({ route: { learningpathId: pathId(), userId: userId('B') }, nodes });
+      for (const [who, context, label] of [
+        ['A', 'CM_OWN', 'a participant, in the embedding'],
+        ['COLLABORATOR', 'CM_OWN', 'a collaborator of the path who is a participant in the course'],
+        ['ASSISTANT', 'CM_OWN', 'an assistant who edits another path'],
+        ['OUTSIDER', 'OTHER', 'a participant of another course, through that course'],
+        // Used to succeed: Beta's node 3 was completed by a teacher of a course
+        // that has nothing to do with the path.
+        ['FOREIGN', 'OTHER', 'a teacher of another course, through that course'],
+      ] as const) {
+        await loginAsPerson(page, who);
+        const answer = await callService(page, 'local_adele_save_user_path_relation', {
+          learningpathid: pathId(),
+          userid: userId('B'),
+          params,
+          contextid: contextId(context),
+        });
+        expect(answer.error, `${label}: the change must be refused`).toBe('nopermissions');
+      }
+      // And nothing happened: Beta still has two of three, node 3 merely open.
+      drainTaskQueue();
+      await loginAsPerson(page, 'B');
+      expect(await nodeStates(page, 'E2E P own results')).toBe('completed completed accessible');
+      expect(await embedding(page, 'OWN')).toBe(`participant view: ${BETA_ROW}`);
     });
 
     await test.step('people of another course: its context opens nothing of this path', async () => {
