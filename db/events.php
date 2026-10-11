@@ -57,6 +57,13 @@
         'callback' => 'mod_adele_observer::role_changed',
     ],
     [
+        // Who takes part follows the site's graded roles (local_adele #593):
+        // when that setting changes, the participant sources of every
+        // activity are applied again, in the background.
+        'eventname' => '\core\event\config_log_created',
+        'callback' => 'mod_adele_observer::site_config_changed',
+    ],
+    [
         // Completion rule "learning path finished". local_adele recomputes
         // and STORES the learner's path in its own observer of this event;
         // the low priority puts this observer after it, so it reads the new

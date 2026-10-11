@@ -174,6 +174,29 @@ class mod_adele_observer {
     }
 
     /**
+     * Observer for a changed site setting. When the site's graded roles
+     * change, who takes part in the embedding courses changes with them
+     * (local_adele #593): queue every activity's participant sources to be
+     * applied again, so that people who already hold a role that only now
+     * counts become learners.
+     *
+     * @param \core\event\config_log_created $event
+     * @return void
+     */
+    public static function site_config_changed($event) {
+        global $DB;
+        $other = $event->other ?? [];
+        if (($other['name'] ?? '') !== 'gradebookroles' || !empty($other['plugin'])) {
+            return;
+        }
+        foreach ($DB->get_fieldset_select('adele', 'id', '1 = 1') as $instanceid) {
+            $task = new \mod_adele\task\apply_participant_sources_adhoc();
+            $task->set_custom_data(['instanceid' => (int) $instanceid]);
+            \core\task\manager::queue_adhoc_task($task, true);
+        }
+    }
+
+    /**
      * Observer for local_adele's user_path_updated: a learner's path has been
      * recomputed - re-evaluate the completion of the activities that embed it
      * with the rule "learning path finished".

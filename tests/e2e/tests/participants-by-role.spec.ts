@@ -20,7 +20,7 @@
  * Every enrolment into a course that embeds a path used to subscribe to it,
  * whatever the role: teachers stood on the participant list with 0 % and a
  * rank and were enrolled into the starting course. A learner now is who takes
- * part in the course (local/adele:participate through a role of their own).
+ * part in the course (one of the site's graded roles, through a role of their own - local_adele #593).
  *
  * Fixture: the course E2EP of chain P. Its teachers - with and without
  * editing rights - and "Privacy Switch", who starts as a teacher without
