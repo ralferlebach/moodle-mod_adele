@@ -114,7 +114,10 @@ class mod_adele_observer {
                     // before comparing, since a raw string comparison would silently
                     // skip the subscription whenever more than one option is selected.
                     $options = explode(',', (string) $adelelp->participantslist);
-                    if (in_array('1', $options)) {
+                    // Source 1 counts course membership - but not membership
+                    // that ADELE created itself, e.g. the host enrolment of
+                    // another learning path embedded here (#37).
+                    if (in_array('1', $options) && ($data->other['enrol'] ?? '') !== 'adele') {
                         // Subscribe user to learning path.
                         $learningpath = learning_paths::get_learning_path_by_id($adelelp->learningpathid);
                         if ($learningpath) {
@@ -219,6 +222,11 @@ class mod_adele_observer {
         $userparams = new stdClass();
         $userparams->userid = $data->userid;
         foreach ($enrolledusers as $user) {
+            // Members only through an enrolment ADELE made itself do not
+            // count (#37): the same rule as on the event path.
+            if (!host_policy::has_foreign_enrolment((int) $user->id, [(int) $data->courseid])) {
+                continue;
+            }
             $userparams->relateduserid = $user->id;
             enrollment::subscribe_user_to_learning_path($learningpath, $userparams);
         }

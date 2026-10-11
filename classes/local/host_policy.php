@@ -234,11 +234,18 @@ class host_policy {
     /**
      * Whether the user holds any non-ADELE enrolment in one of the courses.
      *
+     * The one rule for every participant source (#37): only enrolments
+     * that ADELE did NOT create itself count as taking part in a course.
+     * An enrolment ADELE made for one learning path must never carry the
+     * person into another - otherwise subscriptions spread from path to
+     * path through shared courses. Used for sources 2 and 3 here, and for
+     * source 1 by the observer.
+     *
      * @param int $userid The user id.
      * @param int[] $courseids Course ids to check.
      * @return bool
      */
-    private static function has_foreign_enrolment(int $userid, array $courseids): bool {
+    public static function has_foreign_enrolment(int $userid, array $courseids): bool {
         global $DB;
 
         if (!$courseids) {

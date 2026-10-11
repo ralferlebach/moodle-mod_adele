@@ -275,5 +275,175 @@ test.describe('ADELE-E2E-H2 — the second participant source: the starting node
         'this source must not carry a person who is in no course of the path'
       );
     });
+
+    await test.step('somebody only in a LATER node course is not either', async () => {
+      // The node learner is manually in T03 only. Other learning paths of
+      // the fixture site have since enrolled them into T01 as well - but an
+      // enrolment ADELE created itself does not count (mod_adele #37), so
+      // the starting node source must not reach them.
+      await loginAs(page, fixture('ADELE_FIXTURE_NODE_LEARNER'), fixturePassword());
+      await expectCourseClosed(
+        page,
+        hostcourse,
+        'the starting node source must not carry a person who is only in a later node course'
+      );
+    });
+  });
+});
+
+/**
+ * Embed the reference path into a host course with the given sources and,
+ * where the form offers it, host enrolment mode.
+ *
+ * @param page The page, logged in as a teacher or admin.
+ * @param hostcourse The host course id.
+ * @param name The activity name.
+ * @param sources The participant sources, as their labels.
+ * @param mode The host enrolment mode's label, if it is to be changed.
+ */
+async function embedWith(page: Page, hostcourse: string, name: string, sources: string[], mode?: string): Promise<void> {
+  await page.goto(`/course/modedit.php?add=adele&course=${hostcourse}&section=0`);
+  await page.locator('#id_name').fill(name);
+  await chooseInAutocomplete(page, 'Chosen Learning Path', referencePath.name);
+  for (const source of sources) {
+    await chooseInAutocomplete(page, 'Learning path enrolment', source);
+  }
+  if (mode) {
+    // A plain select, shown only for the sources "starting node" and "any
+    // course" - selecting by its visible label proves it is shown.
+    // By role: the label alone also matches the help button beside the field.
+    await page.getByRole('combobox', { name: 'Enrolment in this course', exact: true }).selectOption({ label: mode });
+  }
+  await page.getByRole('button', { name: /Save and return to course|Speichern und zum Kurs/i }).click();
+  await expect(page.getByRole('link', { name: name })).toBeVisible();
+}
+
+/**
+ * The row of a person on a course's participants page, as an admin sees it.
+ *
+ * @param page The page, logged in as admin.
+ * @param courseid The course.
+ * @param fullname The person's full name.
+ */
+async function participantRow(page: Page, courseid: string, fullname: string) {
+  await page.goto(`/user/index.php?id=${courseid}&perpage=5000`);
+  return page.locator('table#participants tbody tr').filter({ hasText: fullname });
+}
+
+const SOURCE_THIS = 'for people enrolled in this course';
+const SOURCE_START = 'for people enrolled in a starting node';
+const SOURCE_ANY = 'for people enrolled in any course of the learning path';
+
+test.describe('ADELE-E2E-H2 — the third participant source: any course of the path', () => {
+  test('a person only in a later node course is carried, outsiders are not', async ({ page }) => {
+    const hostcourse = fixture('ADELE_FIXTURE_HOST_COURSE_3');
+    const nodelearner = fixture('ADELE_FIXTURE_NODE_LEARNER');
+    const outsider = fixture('ADELE_FIXTURE_HOST_OUTSIDER');
+
+    await test.step('precondition: neither of them is in the host course', async () => {
+      for (const person of [nodelearner, outsider]) {
+        await loginAs(page, person, fixturePassword());
+        await expectCourseClosed(page, hostcourse, `${person} has not been carried anywhere yet`);
+      }
+    });
+
+    await test.step('a teacher embeds the path with "any course" as the source', async () => {
+      await loginAs(page, env.adminUser, env.adminPassword);
+      await embedWith(page, hostcourse, 'E2E Knotenquelle ' + Date.now(), [SOURCE_ANY]);
+    });
+
+    await test.step('the person in a later node course reaches the host course', async () => {
+      await loginAs(page, nodelearner, fixturePassword());
+      await expectCourseOpenAfterTasks(page, hostcourse, 'any course of the path must carry them');
+    });
+
+    await test.step('the outsider does not', async () => {
+      drainTaskQueue();
+      await loginAs(page, outsider, fixturePassword());
+      await expectCourseClosed(page, hostcourse, 'this source must not carry a person in no course of the path');
+    });
+  });
+});
+
+test.describe('ADELE-E2E-H2 — two sources combined: this course AND the starting node', () => {
+  test('each source carries its own people, nobody else', async ({ page }) => {
+    const hostcourse = fixture('ADELE_FIXTURE_HOST_COURSE_6');
+    const member = fixture('ADELE_FIXTURE_HOST_MEMBER_1');
+    const entrylearner = fixture('ADELE_FIXTURE_ENTRY_LEARNER');
+    const outsider = fixture('ADELE_FIXTURE_HOST_OUTSIDER');
+
+    await test.step('a teacher embeds the path with both sources', async () => {
+      await loginAs(page, env.adminUser, env.adminPassword);
+      await embedWith(page, hostcourse, 'E2E Kombination ' + Date.now(), [SOURCE_THIS, SOURCE_START]);
+    });
+
+    await test.step('"this course": the host member is subscribed and reaches the entry course', async () => {
+      await loginAs(page, member, fixturePassword());
+      await expectCourseOpenAfterTasks(page, fixtureCourse('T01'), 'membership of the host course must carry them');
+    });
+
+    await test.step('"starting node": the entry course learner reaches the host course', async () => {
+      await loginAs(page, entrylearner, fixturePassword());
+      await expectCourseOpenAfterTasks(page, hostcourse, 'the starting node course must carry them');
+    });
+
+    await test.step('the outsider reaches neither', async () => {
+      drainTaskQueue();
+      await loginAs(page, outsider, fixturePassword());
+      await expectCourseClosed(page, hostcourse, 'neither source applies to the outsider');
+      await expectCourseClosed(page, fixtureCourse('T01'), 'neither source applies to the outsider');
+    });
+  });
+});
+
+test.describe('ADELE-E2E-H3 — the host enrolment modes', () => {
+  test('"hidden": the person is listed as suspended and cannot enter the host course', async ({ page }) => {
+    const hostcourse = fixture('ADELE_FIXTURE_HOST_COURSE_4');
+    const entrylearner = fixture('ADELE_FIXTURE_ENTRY_LEARNER');
+    const name = fixture('ADELE_FIXTURE_ENTRY_LEARNER_NAME');
+
+    await test.step('a teacher embeds the path, starting node source, mode "hidden"', async () => {
+      await loginAs(page, env.adminUser, env.adminPassword);
+      await embedWith(page, hostcourse, 'E2E Modus hidden ' + Date.now(), [SOURCE_START], 'hidden (as a suspended enrolment)');
+      drainTaskQueue();
+    });
+
+    await test.step('participants list: present, but suspended', async () => {
+      await expect
+        .poll(async () => {
+          drainTaskQueue();
+          const row = await participantRow(page, hostcourse, name);
+          return (await row.count()) ? (await row.first().innerText()).replace(/\s+/g, ' ') : '';
+        }, { message: 'the person must be listed in the host course', timeout: 60_000 })
+        .toMatch(/Suspended|Gesperrt/);
+    });
+
+    await test.step('real access: the host course stays closed to them', async () => {
+      await loginAs(page, entrylearner, fixturePassword());
+      await expectCourseClosed(page, hostcourse, 'a suspended enrolment must not open the course');
+    });
+  });
+
+  test('"none": the person is not enrolled in the host course at all', async ({ page }) => {
+    const hostcourse = fixture('ADELE_FIXTURE_HOST_COURSE_5');
+    const entrylearner = fixture('ADELE_FIXTURE_ENTRY_LEARNER');
+    const name = fixture('ADELE_FIXTURE_ENTRY_LEARNER_NAME');
+
+    await test.step('a teacher embeds the path, starting node source, mode "none"', async () => {
+      await loginAs(page, env.adminUser, env.adminPassword);
+      await embedWith(page, hostcourse, 'E2E Modus none ' + Date.now(), [SOURCE_START], 'no enrolment at all');
+      drainTaskQueue();
+    });
+
+    await test.step('participants list: not there', async () => {
+      drainTaskQueue();
+      const row = await participantRow(page, hostcourse, name);
+      await expect(row, 'mode "none" must not enrol the person into the host course').toHaveCount(0);
+    });
+
+    await test.step('real access: the host course is closed to them', async () => {
+      await loginAs(page, entrylearner, fixturePassword());
+      await expectCourseClosed(page, hostcourse, 'without an enrolment the course stays closed');
+    });
   });
 });
