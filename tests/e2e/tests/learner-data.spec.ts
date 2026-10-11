@@ -44,6 +44,11 @@
  * assistant or a collaborator of some other path reads nothing here - and
  * the same boundary holds for changing a learner's path.
  *
+ * The path is embedded in a second course, E2EP2, as well, with a learner of
+ * its own (Gamma). A roster belongs to its course (local_adele #588): Gamma is
+ * on the same path and appears in none of E2EP's lists, nor Alpha and Beta in
+ * E2EP2's; only authority over the path, asked outside any course, sees all.
+ *
  * Everybody enrolled in the embedding course is subscribed to the path, staff
  * included - the list therefore shows the teachers with 0/3 as well. The
  * chain pins the two learners and leaves the staff rows alone (open question,
@@ -70,6 +75,8 @@ import {
 
 const ALPHA = 'Privacy Alpha';
 const BETA = 'Privacy Beta';
+// The learner of ANOTHER course that embeds the same path (local_adele #588).
+const GAMMA = 'Privacy Gamma';
 const ALPHA_ROW = `${ALPHA} | 33.33 | 1/3 | rank 2`;
 const BETA_ROW = `${BETA} | 66.67 | 2/3 | rank 1`;
 
@@ -94,14 +101,14 @@ async function loginAsPerson(page: Page, who: string): Promise<void> {
 }
 
 /**
- * Open one of the two embeddings and say what the person got:
- * "no access", or the kind of view and the rows of the two learners.
+ * Open one of the embeddings and say what the person got:
+ * "no access", or the kind of view and the rows of the learners.
  *
  * @param page The page, logged in.
- * @param which OWN or ALL.
+ * @param which OWN or ALL (course E2EP), or SECOND (the same path in course E2EP2).
  * @returns e.g. "participant view: Privacy Alpha | 33.33 | 1/3 | rank 2".
  */
-async function embedding(page: Page, which: 'OWN' | 'ALL'): Promise<string> {
+async function embedding(page: Page, which: 'OWN' | 'ALL' | 'SECOND'): Promise<string> {
   await page.goto(`/mod/adele/view.php?id=${fixture(`ADELE_FIXTURE_P_CM_${which}`)}`);
   if (!page.url().includes('/mod/adele/view.php')) {
     return 'no access';
@@ -111,7 +118,8 @@ async function embedding(page: Page, which: 'OWN' | 'ALL'): Promise<string> {
   await expect(table.locator('tbody tr').first()).toBeVisible({ timeout: 30_000 });
   await page.waitForLoadState('networkidle');
   const view = (await table.locator('thead th').count()) === 6 ? 'teacher view' : 'participant view';
-  const learners = (await participantList(page)).filter((row) => row.startsWith(ALPHA) || row.startsWith(BETA));
+  const learners = (await participantList(page))
+    .filter((row) => [ALPHA, BETA, GAMMA].some((name) => row.startsWith(name)));
   return `${view}: ${learners.sort().join(' ; ') || 'neither learner'}`;
 }
 
@@ -133,7 +141,7 @@ async function roster(page: Page, context: number, userid = 0): Promise<string> 
     return `denied (${answer.error})`;
   }
   const names = (answer.data as { lastname: string }[]).map((row) => row.lastname)
-    .filter((name) => name === ALPHA || name === BETA);
+    .filter((name) => [ALPHA, BETA, GAMMA].includes(name));
   return names.sort().join(', ') || 'neither learner';
 }
 
@@ -233,7 +241,21 @@ test.describe('ADELE-E2E-P — learner data in a course that embeds a path', () 
       }
     });
 
+    await test.step('the same path in another course: each course lists its own learners (#588)', async () => {
+      await loginAsPerson(page, 'ADMIN');
+      // Gamma is on the path - and in none of E2EP's lists (the rows above
+      // are exact); here she is alone, and first of one.
+      await expect.poll(() => embedding(page, 'SECOND'), { timeout: 60_000, intervals: [2_000, 5_000] })
+        .toBe(`teacher view: ${GAMMA} | 0 | 0/3 | rank 1 | link`);
+      // Authority over the path, asked outside any course: the whole path.
+      await loginAsPerson(page, 'MANAGER');
+      expect(await roster(page, 1), 'manager, system context').toBe(`${ALPHA}, ${BETA}, ${GAMMA}`);
+      expect(await roster(page, contextId('CM_ALL')), 'manager, through the embedding in E2EP').toBe(`${ALPHA}, ${BETA}`);
+      await loginAsPerson(page, 'TEACHER');
+    });
+
     await test.step("the teacher opens Beta's detail view: Beta's node states", async () => {
+      expect(await embedding(page, 'ALL')).toBe(`teacher view: ${ALPHA_ROW} | link ; ${BETA_ROW} | link`);
       await page.locator('#adele-userlist-table tbody tr').filter({ hasText: BETA }).getByRole('link').first().click();
       for (const [nodeid, status] of [['dndnode_1', 'completed'], ['dndnode_2', 'completed'], ['dndnode_3', 'accessible']]) {
         await expect(page.locator(`[data-testid="learningpath-node-${nodeid}"]`), `Beta's ${nodeid}`)
@@ -375,6 +397,19 @@ test.describe('ADELE-E2E-P — learner data in a course that embeds a path', () 
       await loginAsPerson(page, 'B');
       expect(await nodeStates(page, 'E2E P own results')).toBe('completed completed accessible');
       expect(await embedding(page, 'OWN')).toBe(`participant view: ${BETA_ROW}`);
+    });
+
+    await test.step('the teacher of this course has no say over the learner of the other course (#588)', async () => {
+      await loginAsPerson(page, 'TEACHER');
+      expect(await detail(page, 'B', contextId('CM_OWN')), 'a learner of the own course').toBe(BETA);
+      expect(await detail(page, 'C', contextId('CM_OWN')), "Gamma's snapshot").toBe(denied);
+      const answer = await callService(page, 'local_adele_save_user_path_relation', {
+        learningpathid: pathId(),
+        userid: userId('TEACHER'),
+        params: JSON.stringify({ route: { learningpathId: pathId(), userId: userId('C') }, nodes: [] }),
+        contextid: contextId('CM_OWN'),
+      });
+      expect(answer.error, "changing Gamma's path must be refused").toBe('nopermissions');
     });
 
     await test.step('people of another course: its context opens nothing of this path', async () => {
