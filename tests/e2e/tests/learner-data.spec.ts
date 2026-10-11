@@ -33,7 +33,8 @@
  *       of the other learner, neither on the page nor in what the server sends
  *   P2  with "results of all other participants" both learners are listed
  *       with the correct values; the teacher reaches a learner's detail view
- *   P3  the same question for every role, as implemented (table below)
+ *   P3  the same question for every role (table below); the teacher without
+ *       editing rights sees what the teacher sees and changes nothing (#39)
  *   P4  a participant asks for foreign data directly: foreign row, foreign
  *       detail view, direct URL - through every context they can name
  *
@@ -275,10 +276,9 @@ test.describe('ADELE-E2E-P — learner data in a course that embeds a path', () 
       // Teacher with editing rights: the teacher's view, everything.
       ['TEACHER', `teacher view: ${bothlinked}`, `teacher view: ${bothlinked}`, `${ALPHA}, ${BETA}`, BETA,
         'teacher with editing rights'],
-      // Teacher without editing rights: may read everything (local/adele:teacheredit),
-      // but gets the participant's view - which hides the others under
-      // "only own results" and offers no detail view.
-      ['TUTOR', 'participant view: neither learner', `participant view: ${both}`, `${ALPHA}, ${BETA}`, BETA,
+      // Teacher without editing rights (#39): sees everything, like the teacher -
+      // local/adele:viewparticipants - and changes nothing (next step, and P4).
+      ['TUTOR', `teacher view: ${bothlinked}`, `teacher view: ${bothlinked}`, `${ALPHA}, ${BETA}`, BETA,
         'teacher without editing rights'],
       // Collaborator of THIS path, enrolled as a participant: the same.
       ['COLLABORATOR', 'participant view: neither learner', `participant view: ${both}`, `${ALPHA}, ${BETA}`, BETA,
@@ -307,6 +307,33 @@ test.describe('ADELE-E2E-P — learner data in a course that embeds a path', () 
         expect(await detail(page, 'B', contextId('CM_OWN')), `${label}: Beta's snapshot from the server`).toBe(one);
       });
     }
+  });
+
+  test('P3: the teacher without editing rights sees a learner\'s path and cannot change it (#39)', async ({ page }) => {
+    const node = (id: string) => page.locator(`[data-testid="learningpath-node-${id}"]`);
+    const openBeta = async (who: string) => {
+      await loginAsPerson(page, who);
+      expect(await embedding(page, 'OWN')).toContain(`${BETA_ROW} | link`);
+      await page.locator('#adele-userlist-table tbody tr').filter({ hasText: BETA }).getByRole('link').first().click();
+      await expect(node('dndnode_3')).toHaveAttribute('data-status', 'accessible', { timeout: 60_000 });
+    };
+
+    await test.step("with editing rights: Beta's path, with the controls that change it", async () => {
+      await openBeta('TEACHER');
+      await expect(node('dndnode_3').getByRole('button', { name: 'Master checkboxes' })).toHaveCount(1);
+      await expect(page.getByRole('button', { name: 'Save', exact: true })).toBeVisible();
+    });
+
+    await test.step("without editing rights: the same path, the same states - and nothing to change it with", async () => {
+      await openBeta('TUTOR');
+      for (const [nodeid, status] of [['dndnode_1', 'completed'], ['dndnode_2', 'completed'], ['dndnode_3', 'accessible']]) {
+        await expect(node(nodeid), `Beta's ${nodeid}`).toHaveAttribute('data-status', status);
+      }
+      await expect(page.getByRole('button', { name: 'Master checkboxes' })).toHaveCount(0);
+      await expect(page.getByLabel('Master completion checkbox')).toHaveCount(0);
+      await expect(page.getByLabel('Master access checkbox')).toHaveCount(0);
+      await expect(page.getByRole('button', { name: 'Save', exact: true })).toHaveCount(0);
+    });
   });
 
   test('P4: a participant asks for foreign data directly', async ({ page }) => {
@@ -376,6 +403,8 @@ test.describe('ADELE-E2E-P — learner data in a course that embeds a path', () 
       const params = JSON.stringify({ route: { learningpathId: pathId(), userId: userId('B') }, nodes });
       for (const [who, context, label] of [
         ['A', 'CM_OWN', 'a participant, in the embedding'],
+        // Used to succeed (#39): seeing is not changing.
+        ['TUTOR', 'CM_OWN', 'a teacher of this course without editing rights'],
         ['COLLABORATOR', 'CM_OWN', 'a collaborator of the path who is a participant in the course'],
         ['ASSISTANT', 'CM_OWN', 'an assistant who edits another path'],
         ['OUTSIDER', 'OTHER', 'a participant of another course, through that course'],

@@ -220,7 +220,8 @@ function mod_adele_cm_info_view(cm_info $cm) {
     ) {
         $alisecompatible = local_adele::get_internal_quiz_id($learningpathmod->learningpathid, $PAGE->course->id);
         $modulecontext = context_module::instance($cm->id);
-        if (has_capability('mod/adele:addinstance', $modulecontext)) {
+        $mode = \mod_adele\local\view_mode::for_context($modulecontext);
+        if ($mode['view'] === 'teacher') {
             if ($alisecompatible['alisecompatible']) {
                 $html = $OUTPUT->render_from_template(
                     'local_adele/initview',
@@ -231,6 +232,8 @@ function mod_adele_cm_info_view(cm_info $cm) {
                     'learningpath' => $learningpathmod->learningpathid,
                     'userlist' => $learningpathmod->userlist,
                     'view' => "teacher",
+                    // Without the right to change a learner's path the view is read-only (#39).
+                    'readonly' => $mode['readonly'],
                     'wwwroot' => $CFG->wwwroot,
                     'version' => $CFG->version,
                     ]
@@ -243,7 +246,7 @@ function mod_adele_cm_info_view(cm_info $cm) {
                 </div>';
             }
             $cm->set_content($html);
-        } else if (has_capability('mod/adele:readinstance', $modulecontext)) {
+        } else if ($mode['view'] === 'student') {
             if ($alisecompatible['alisecompatible']) {
                 $html = $OUTPUT->render_from_template(
                     'local_adele/initview',
