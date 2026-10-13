@@ -75,6 +75,7 @@ import {
   fixturePassword,
   nodeStatus,
   participantList,
+  reseedFixtures,
   runCompletion,
 } from '../support/fixtures';
 
@@ -181,6 +182,10 @@ async function nodeStates(page: Page, activity: string): Promise<string> {
   }
   return states.join(' ');
 }
+
+// Every file starts from the seeded state, whatever ran before it
+// (support/fixtures: reseedFixtures; E2E issue, section 3B).
+test.beforeAll(() => reseedFixtures());
 
 test.describe('ADELE-E2E-P — learner data in a course that embeds a path', () => {
   // One story: the later tests ask about the progress the first one creates.

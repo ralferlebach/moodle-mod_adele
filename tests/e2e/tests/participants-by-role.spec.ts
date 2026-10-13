@@ -52,6 +52,7 @@ import {
   fixtureCourse,
   fixturePassword,
   participantList,
+  reseedFixtures,
   setCourseRoles,
   setEnrolmentStatus,
 } from '../support/fixtures';
@@ -80,6 +81,10 @@ async function listed(page: Page): Promise<string[]> {
 async function asSwitch(page: Page): Promise<void> {
   await loginAs(page, fixture('ADELE_FIXTURE_P_SWITCH'), fixturePassword());
 }
+
+// Every file starts from the seeded state, whatever ran before it
+// (support/fixtures: reseedFixtures; E2E issue, section 3B).
+test.beforeAll(() => reseedFixtures());
 
 test.describe('ADELE-E2E-P — who takes part: the role decides (#587)', () => {
   test('a teacher is no learner; with the participant\'s role they are; without it again not', { tag: ['@story:P2'] }, async ({ page }) => {
