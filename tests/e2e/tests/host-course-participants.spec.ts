@@ -143,7 +143,7 @@ async function embedReferencePath(page: Page, hostcourse: string): Promise<strin
 }
 
 test.describe('ADELE-E2E-H1 — embedding a path into a course carries its participants', () => {
-  test('the participants of the host course reach the entry course, outsiders do not', async ({ page }) => {
+  test('the participants of the host course reach the entry course, outsiders do not', { tag: ['@story:H1'] }, async ({ page }) => {
     const hostcourse = fixture('ADELE_FIXTURE_HOST_COURSE');
     const member = fixture('ADELE_FIXTURE_HOST_MEMBER_1');
     const outsider = fixture('ADELE_FIXTURE_HOST_OUTSIDER');
@@ -196,7 +196,7 @@ test.describe('ADELE-E2E-H1 — embedding a path into a course carries its parti
 });
 
 test.describe('ADELE-E2E-H1b — leaving the host course withdraws the access it granted', () => {
-  test('unenrolling one participant closes their access, and only theirs', async ({ page }) => {
+  test('unenrolling one participant closes their access, and only theirs', { tag: ['@story:H1'] }, async ({ page }) => {
     const hostcourse = fixture('ADELE_FIXTURE_HOST_COURSE');
     const leaving = fixture('ADELE_FIXTURE_HOST_MEMBER_1');
     const leavingname = fixture('ADELE_FIXTURE_HOST_MEMBER_1_NAME');
@@ -268,7 +268,7 @@ test.describe('ADELE-E2E-H1b — leaving the host course withdraws the access it
 });
 
 test.describe('ADELE-E2E-H2 — the second participant source: the starting node course', () => {
-  test('people in the entry course are carried, outsiders are not', async ({ page }) => {
+  test('people in the entry course are carried, outsiders are not', { tag: ['@story:H2'] }, async ({ page }) => {
     const hostcourse = fixture('ADELE_FIXTURE_HOST_COURSE_2');
     const entrylearner = fixture('ADELE_FIXTURE_ENTRY_LEARNER');
     const outsider = fixture('ADELE_FIXTURE_HOST_OUTSIDER');
@@ -370,7 +370,7 @@ const SOURCE_START = 'for people enrolled in a starting node';
 const SOURCE_ANY = 'for people enrolled in any course of the learning path';
 
 test.describe('ADELE-E2E-H2 — the third participant source: any course of the path', () => {
-  test('a person only in a later node course is carried, outsiders are not', async ({ page }) => {
+  test('a person only in a later node course is carried, outsiders are not', { tag: ['@story:H2'] }, async ({ page }) => {
     const hostcourse = fixture('ADELE_FIXTURE_HOST_COURSE_3');
     const nodelearner = fixture('ADELE_FIXTURE_NODE_LEARNER');
     const outsider = fixture('ADELE_FIXTURE_HOST_OUTSIDER');
@@ -401,7 +401,7 @@ test.describe('ADELE-E2E-H2 — the third participant source: any course of the 
 });
 
 test.describe('ADELE-E2E-H2 — two sources combined: this course AND the starting node', () => {
-  test('each source carries its own people, nobody else', async ({ page }) => {
+  test('each source carries its own people, nobody else', { tag: ['@story:H2'] }, async ({ page }) => {
     const hostcourse = fixture('ADELE_FIXTURE_HOST_COURSE_6');
     const member = fixture('ADELE_FIXTURE_HOST_MEMBER_1');
     const entrylearner = fixture('ADELE_FIXTURE_ENTRY_LEARNER');
@@ -449,7 +449,7 @@ async function pathRoster(page: Page, hostcourse: string, activity: string): Pro
 }
 
 test.describe('ADELE-E2E-H3 — the host enrolment modes', () => {
-  test('"hidden": the person is listed as suspended and cannot enter the host course', async ({ page }) => {
+  test('"hidden": the person is listed as suspended and cannot enter the host course', { tag: ['@story:H3'] }, async ({ page }) => {
     const hostcourse = fixture('ADELE_FIXTURE_HOST_COURSE_4');
     const entrylearner = fixture('ADELE_FIXTURE_ENTRY_LEARNER');
     const name = fixture('ADELE_FIXTURE_ENTRY_LEARNER_NAME');
@@ -485,7 +485,7 @@ test.describe('ADELE-E2E-H3 — the host enrolment modes', () => {
     });
   });
 
-  test('"none": the person is not enrolled in the host course at all', async ({ page }) => {
+  test('"none": the person is not enrolled in the host course at all', { tag: ['@story:H3'] }, async ({ page }) => {
     const hostcourse = fixture('ADELE_FIXTURE_HOST_COURSE_5');
     const entrylearner = fixture('ADELE_FIXTURE_ENTRY_LEARNER');
     const name = fixture('ADELE_FIXTURE_ENTRY_LEARNER_NAME');

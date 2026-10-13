@@ -186,7 +186,7 @@ test.describe('ADELE-E2E-P — learner data in a course that embeds a path', () 
   // One story: the later tests ask about the progress the first one creates.
   test.describe.configure({ mode: 'serial' });
 
-  test('P1: a learner sees the own data, and nothing of the other learner', async ({ page }) => {
+  test('P1: a learner sees the own data, and nothing of the other learner', { tag: ['@story:P1'] }, async ({ page }) => {
     await test.step('Alpha completes T01, Beta completes T01 and T02', async () => {
       for (const [who, courses] of [['A', ['T01']], ['B', ['T01', 'T02']]] as const) {
         await loginAsPerson(page, who);
@@ -231,7 +231,7 @@ test.describe('ADELE-E2E-P — learner data in a course that embeds a path', () 
     }
   });
 
-  test('P2: with "results of all other participants" both learners are listed, correctly', async ({ page }) => {
+  test('P2: with "results of all other participants" both learners are listed, correctly', { tag: ['@story:P2'] }, async ({ page }) => {
     await test.step('a participant sees both learners with status and percentage', async () => {
       await loginAsPerson(page, 'A');
       await expect.poll(() => embedding(page, 'ALL'), { timeout: 60_000, intervals: [2_000, 5_000] })
@@ -273,7 +273,7 @@ test.describe('ADELE-E2E-P — learner data in a course that embeds a path', () 
     });
   });
 
-  test('P3: what each role sees, as implemented', async ({ page }) => {
+  test('P3: what each role sees, as implemented', { tag: ['@story:P3'] }, async ({ page }) => {
     const both = `${ALPHA_ROW} ; ${BETA_ROW}`;
     const bothlinked = `${ALPHA_ROW} | link ; ${BETA_ROW} | link`;
     // Who            "own results"                      "all results"                 roster from server  Beta's detail from server.
@@ -319,7 +319,7 @@ test.describe('ADELE-E2E-P — learner data in a course that embeds a path', () 
     }
   });
 
-  test('P3: the teacher without editing rights sees a learner\'s path and cannot change it (#39)', async ({ page }) => {
+  test('P3: the teacher without editing rights sees a learner\'s path and cannot change it (#39)', { tag: ['@story:P3'] }, async ({ page }) => {
     const node = (id: string) => page.locator(`[data-testid="learningpath-node-${id}"]`);
     const openBeta = async (who: string) => {
       await loginAsPerson(page, who);
@@ -346,7 +346,7 @@ test.describe('ADELE-E2E-P — learner data in a course that embeds a path', () 
     });
   });
 
-  test('P4: a participant asks for foreign data directly', async ({ page }) => {
+  test('P4: a participant asks for foreign data directly', { tag: ['@story:P4'] }, async ({ page }) => {
     const denied = 'denied (nopermissions)';
 
     await test.step('the foreign row: whatever context the request names, never Beta', async () => {

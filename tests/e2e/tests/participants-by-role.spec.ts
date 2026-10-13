@@ -43,6 +43,7 @@
 import { test, expect, Page } from '@playwright/test';
 import { env, loginAs } from '../support/env';
 import {
+  accessThroughAdele,
   courseAccess,
   drainTaskQueue,
   expectCourseClosedAfterTasks,
@@ -81,7 +82,7 @@ async function asSwitch(page: Page): Promise<void> {
 }
 
 test.describe('ADELE-E2E-P — who takes part: the role decides (#587)', () => {
-  test('a teacher is no learner; with the participant\'s role they are; without it again not', async ({ page }) => {
+  test('a teacher is no learner; with the participant\'s role they are; without it again not', { tag: ['@story:P2'] }, async ({ page }) => {
     const host = fixture('ADELE_FIXTURE_P_HOST');
     const t01 = fixtureCourse('T01');
 
@@ -115,7 +116,7 @@ test.describe('ADELE-E2E-P — who takes part: the role decides (#587)', () => {
     });
   });
 
-  test('suspended by hand: off the list of the course, the path stays (local_adele #588)', async ({ page }) => {
+  test('suspended by hand: off the list of the course, the path stays (local_adele #588)', { tag: ['@story:P2'] }, async ({ page }) => {
     // The collaborator sits in the course as an ordinary participant, with a
     // manual enrolment, and is a learner of the path.
     const host = fixture('ADELE_FIXTURE_P_HOST');
@@ -141,7 +142,7 @@ test.describe('ADELE-E2E-P — who takes part: the role decides (#587)', () => {
       // A suspension in the host course is without consequence for the path
       // itself (earlier decision): the starting course stays open.
       await asPerson();
-      expect(await courseAccess(page, t01), 'the path is untouched').toBe('open');
+      expect(await accessThroughAdele(page, t01), 'the path is untouched').toBe('open');
     });
 
     await test.step('reactivated: back on the list', async () => {

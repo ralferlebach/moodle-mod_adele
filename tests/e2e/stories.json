@@ -1,0 +1,13 @@
+{
+  "plugin": "mod_adele",
+  "required": [
+    "H1",
+    "H2",
+    "H3",
+    "P1",
+    "P2",
+    "P3",
+    "P4"
+  ],
+  "note": "Sections 16 and 17 of the test plan."
+}
