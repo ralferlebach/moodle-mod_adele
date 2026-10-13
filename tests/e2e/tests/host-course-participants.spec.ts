@@ -34,7 +34,6 @@
  * @license     http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 
-import { execFileSync } from 'node:child_process';
 import { test, expect, Page } from '@playwright/test';
 import { env, loginAs } from '../support/env';
 import {
@@ -49,54 +48,15 @@ import {
   reseedFixtures,
   runLabel,
 } from '../support/fixtures';
-
-/**
- * Pick one entry in a Moodle autocomplete field.
- *
- * @param page The page showing the form.
- * @param label The field's label.
- * @param entry The exact text of the entry to pick.
- */
-async function chooseInAutocomplete(page: Page, label: string, entry: string): Promise<void> {
-  const input = page.getByRole('combobox', { name: label });
-  // Only in THIS field's suggestion list: Moodle links it to the input via
-  // aria-controls. A page-wide search also finds the entries already
-  // selected - in this field and in the other autocomplete - which are
-  // options too.
-  const listid = await input.getAttribute('aria-controls');
-  const option = (listid ? page.locator(`[id="${listid}"]`) : page)
-    .getByRole('option', { name: entry, exact: true }).first();
-  // What the form will actually submit: the hidden <select> that Moodle's
-  // autocomplete fills. A click on a suggestion is not proof - under load a
-  // choice was lost (the second participant source never reached the form,
-  // and the chain failed later for a reason that looked like the product's).
-  const field = page.locator('form.mform select').filter({
-    has: page.locator('option', { hasText: entry }),
-  }).first();
-  const chosen = async (): Promise<boolean> =>
-    (await field.locator('option:checked').allInnerTexts()).some((text) => text.trim() === entry);
-
-  for (let attempt = 0; attempt < 3 && !(await chosen()); attempt++) {
-    // Typed like a person: Moodle opens its list from its own key handlers,
-    // which a one-shot fill() can miss when the page is busy.
-    await input.click();
-    await input.fill('');
-    await input.pressSequentially(entry.slice(0, 20), { delay: 20 });
-    await option.waitFor({ state: 'visible', timeout: 5_000 }).catch(() => undefined);
-    if (!(await option.isVisible())) {
-      await input.press('ArrowDown');
-      await option.waitFor({ state: 'visible', timeout: 5_000 }).catch(() => undefined);
-    }
-    if (await option.isVisible()) {
-      await option.click();
-    }
-    // Leave the field with Tab: it closes the suggestion list (otherwise the
-    // next click on the page only closes the list) and keeps the choice.
-    await input.press('Tab');
-    await expect.poll(chosen, { timeout: 5_000 }).toBe(true).catch(() => undefined);
-  }
-  expect(await chosen(), `"${entry}" must be selected in "${label}"`).toBe(true);
-}
+import {
+  chooseInAutocomplete,
+  embedWith,
+  onPath,
+  participantRow,
+  SOURCE_ANY,
+  SOURCE_START,
+  SOURCE_THIS,
+} from '../support/host';
 
 /**
  * Embed the reference path into the host course, through the form.
@@ -140,7 +100,7 @@ async function embedReferencePath(page: Page, hostcourse: string): Promise<strin
   await chooseInAutocomplete(page, 'Learning path enrolment', 'for people enrolled in this course');
 
   await page.getByRole('button', { name: /Save and return to course|Speichern und zum Kurs/i }).click();
-  await expect(page.getByRole('link', { name: activityname })).toBeVisible();
+  await expect(page.getByRole('main').getByRole('link', { name: activityname })).toBeVisible();
 
   return activityname;
 }
@@ -193,7 +153,9 @@ test.describe('ADELE-E2E-H1 — embedding a path into a course carries its parti
     await test.step('the member sees the embedded path in the activity', async () => {
       await loginAs(page, member, fixturePassword());
       await page.goto(`/course/view.php?id=${hostcourse}`);
-      await page.getByRole('link', { name: activityname }).click();
+      // In the main region: Moodle's course index links the same activity
+      // again, and it is open for some people and not for others.
+      await page.getByRole('main').getByRole('link', { name: activityname }).click();
       // The learning path itself renders, with its nodes carrying the
       // machine-readable state from #574.
       await expect(page.locator('[data-testid^="learningpath-node-"]').first())
@@ -203,7 +165,7 @@ test.describe('ADELE-E2E-H1 — embedding a path into a course carries its parti
 });
 
 test.describe('ADELE-E2E-H1b — leaving the host course withdraws the access it granted', () => {
-  test('unenrolling one participant closes their access, and only theirs', { tag: ['@story:H1'] }, async ({ page }) => {
+  test('unenrolling one participant closes their access, and only theirs', { tag: ['@story:H1', '@withdrawal'] }, async ({ page }) => {
     const hostcourse = fixture('ADELE_FIXTURE_HOST_COURSE');
     const leaving = fixture('ADELE_FIXTURE_HOST_MEMBER_1');
     const leavingname = fixture('ADELE_FIXTURE_HOST_MEMBER_1_NAME');
@@ -296,7 +258,7 @@ test.describe('ADELE-E2E-H2 — the second participant source: the starting node
       // The source under test, and the one thing that differs from H1.
       await chooseInAutocomplete(page, 'Learning path enrolment', 'for people enrolled in a starting node');
       await page.getByRole('button', { name: /Save and return to course|Speichern und zum Kurs/i }).click();
-      await expect(page.getByRole('link', { name: activityname })).toBeVisible();
+      await expect(page.getByRole('main').getByRole('link', { name: activityname })).toBeVisible();
     });
 
     await test.step('the person enrolled in the entry course reaches the host course', async () => {
@@ -332,52 +294,6 @@ test.describe('ADELE-E2E-H2 — the second participant source: the starting node
     });
   });
 });
-
-/**
- * Embed the reference path into a host course with the given sources and,
- * where the form offers it, host enrolment mode.
- *
- * @param page The page, logged in as a teacher or admin.
- * @param hostcourse The host course id.
- * @param name The activity name.
- * @param sources The participant sources, as their labels.
- * @param mode The host enrolment mode's label, if it is to be changed.
- * @param pathname The path to embed; the reference path unless said otherwise.
- */
-async function embedWith(
-  page: Page, hostcourse: string, name: string, sources: string[], mode?: string, pathname: string = referencePath.name
-): Promise<void> {
-  await page.goto(`/course/modedit.php?add=adele&course=${hostcourse}&section=0`);
-  await page.locator('#id_name').fill(name);
-  await chooseInAutocomplete(page, 'Chosen Learning Path', pathname);
-  for (const source of sources) {
-    await chooseInAutocomplete(page, 'Learning path enrolment', source);
-  }
-  if (mode) {
-    // A plain select, shown only for the sources "starting node" and "any
-    // course" - selecting by its visible label proves it is shown.
-    // By role: the label alone also matches the help button beside the field.
-    await page.getByRole('combobox', { name: 'Enrolment in this course', exact: true }).selectOption({ label: mode });
-  }
-  await page.getByRole('button', { name: /Save and return to course|Speichern und zum Kurs/i }).click();
-  await expect(page.getByRole('link', { name: name })).toBeVisible();
-}
-
-/**
- * The row of a person on a course's participants page, as an admin sees it.
- *
- * @param page The page, logged in as admin.
- * @param courseid The course.
- * @param fullname The person's full name.
- */
-async function participantRow(page: Page, courseid: string, fullname: string) {
-  await page.goto(`/user/index.php?id=${courseid}&perpage=5000`);
-  return page.locator('table#participants tbody tr').filter({ hasText: fullname });
-}
-
-const SOURCE_THIS = 'for people enrolled in this course';
-const SOURCE_START = 'for people enrolled in a starting node';
-const SOURCE_ANY = 'for people enrolled in any course of the learning path';
 
 test.describe('ADELE-E2E-H2 — the third participant source: any course of the path', () => {
   test('a person only in a later node course is carried, outsiders are not', { tag: ['@story:H2'] }, async ({ page }) => {
@@ -518,22 +434,6 @@ test.describe('ADELE-E2E-H3 — the host enrolment modes', () => {
     });
   });
 });
-
-/**
- * Whether a person is on a learning path, read on the server.
- *
- * @param username The person.
- * @param pathid The path.
- */
-function onPath(username: string, pathid: string): boolean {
-  const out = execFileSync('php', ['-r', `
-    define('CLI_SCRIPT', true);
-    require('config.php');
-    $user = $DB->get_record('user', ['username' => $argv[1]], 'id', MUST_EXIST);
-    echo $DB->record_exists('local_adele_path_user', ['learning_path_id' => (int) $argv[2], 'user_id' => $user->id]) ? 'yes' : 'no';`,
-  '--', username, pathid], { cwd: fixture('ADELE_MOODLE_ROOT'), encoding: 'utf8' });
-  return out.trim().endsWith('yes');
-}
 
 test.describe('ADELE-E2E-H3 — the host enrolment modes for the source "any course of the path"', () => {
   test('"hidden": listed as suspended, the host course stays closed', { tag: ['@story:H3'] }, async ({ page }) => {
