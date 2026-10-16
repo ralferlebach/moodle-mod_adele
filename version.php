@@ -29,14 +29,8 @@ $plugin->supported = [405, 405];
 $plugin->release = '0.7.0';
 $plugin->version = 2026100728;
 $plugin->requires = 2024100700;
-$plugin->maturity = MATURITY_ALPHA;
-// The floors must demand the siblings that actually speak host_policy: an
-// older local_adele still reads the abandoned host-course mirror table -
-// installs cleanly, never fatals, silently reconciles from a stale index.
+$plugin->maturity = MATURITY_BETA;
 $plugin->dependencies = [
-    // 2026100707: local/adele:viewparticipants, which decides about the teacher's view (#39).
-    // 2026100708: enrol_state::is_participant(), who takes part in a course (local_adele #587).
-    // 2026100713: ... decided by the site's graded roles (local_adele #593).
     'local_adele' => 2026100713,
     'enrol_adele' => 2026082903,
 ];
