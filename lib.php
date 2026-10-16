@@ -154,7 +154,11 @@ function adele_delete_instance($id) {
     // alive here - it just is not embedded in this course any more. Without
     // this call the affected users keep an enrolment nobody can explain and
     // nobody can remove (issue #7).
-    adele_queue_host_reconcile((int) $exists->learningpathid, (int) $exists->course);
+    // Deleted is (cleanly) gone (decision of 2026-10-15): whoever only this
+    // embedding carried leaves the path now, with the enrolments it gave -
+    // not after the nightly sweep. A new or restored embedding starts a new
+    // subscription, which reads the learner's progress from the courses again.
+    adele_queue_host_reconcile((int) $exists->learningpathid, (int) $exists->course, true);
 
     return true;
 }

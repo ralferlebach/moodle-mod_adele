@@ -58,6 +58,7 @@ import { test, expect, Page } from '@playwright/test';
 import { env, loginAs } from '../support/env';
 import {
   callService,
+  completeCourse,
   courseAccess,
   drainTaskQueue,
   enrolmentState,
@@ -66,10 +67,12 @@ import {
   fixture,
   fixtureCourse,
   fixturePassword,
+  nodeStatus,
   participantList,
   referencePath,
   reseedFixtures,
   resetServerTime,
+  runCompletion,
   runLabel,
   serverTimeEnv,
   setServerTime,
@@ -324,6 +327,7 @@ test.describe('ADELE-E2E-H2 — a participant source taken back from an embeddin
       const pathid = referencePath.id;
       const activity = runLabel('E2E Quelle zurückgenommen');
       let cmid = '';
+      let node2before = '';
 
       await test.step('precondition: A is on no path and not in the entry course; B is not in the host course', async () => {
         expect(onPath(a, pathid), 'A on the path').toBe(false);
@@ -344,6 +348,16 @@ test.describe('ADELE-E2E-H2 — a participant source taken back from an embeddin
         await loginAs(page, a, fixturePassword());
         await expectCourseOpenAfterTasks(page, entrycourse, '"this course" carries A onto the path');
         expect(onPath(a, pathid), 'A is on the path').toBe(true);
+        // A learns: T01 completed - progress that lives in the course, not
+        // in the subscription.
+        await completeCourse(page, entrycourse);
+        runCompletion();
+        await expect.poll(() => { drainTaskQueue(); return nodeStatus(page, hostcourse, activity, 'dndnode_1'); },
+          { message: "A's T01 node is completed", timeout: 90_000, intervals: [2_000, 5_000] }).toBe('completed');
+        // Node 2 as it is now - in the fixture path a time window that is
+        // over keeps it locked whatever A does, so its state is recorded,
+        // not assumed.
+        node2before = await nodeStatus(page, hostcourse, activity, 'dndnode_2');
         await loginAs(page, b, fixturePassword());
         await expectCourseOpenAfterTasks(page, hostcourse, '"starting node" carries B into the host course');
       });
@@ -387,6 +401,102 @@ test.describe('ADELE-E2E-H2 — a participant source taken back from an embeddin
         await loginAs(page, a, fixturePassword());
         await expectCourseOpenAfterTasks(page, entrycourse, 'restored, the source carries A again');
         expect(onPath(a, pathid)).toBe(true);
+      });
+
+      await test.step('the new subscription starts from what A has done in the courses: T01 completed, T02 as before', async () => {
+        // Decision of 2026-10-15: progress follows course memberships and
+        // results; a new subscription does not start from zero.
+        await expect.poll(async () => {
+          drainTaskQueue();
+          return `${await nodeStatus(page, hostcourse, activity, 'dndnode_1')} ${await nodeStatus(page, hostcourse, activity, 'dndnode_2')}`;
+        }, { message: 'the progress the courses hold', timeout: 90_000, intervals: [2_000, 5_000] })
+          .toBe(`completed ${node2before}`);
+      });
+    });
+});
+
+/**
+ * The context id of a course, read on the server.
+ *
+ * @param courseid The course.
+ */
+function courseContextId(courseid: string): string {
+  return execFileSync('php', ['-r', `
+    define('CLI_SCRIPT', true);
+    require('config.php');
+    echo context_course::instance((int) $argv[1])->id;`, '--', courseid],
+  { cwd: fixture('ADELE_MOODLE_ROOT'), encoding: 'utf8' }).trim().split('\n').pop() as string;
+}
+
+test.describe('ADELE-E2E-H1 — an embedding deleted is cleanly gone; restored, it starts from the courses', () => {
+  test('delete -> off the path and out of the courses at once; restore from the recycle bin -> back, with the progress the courses hold',
+    { tag: ['@story:H1', '@withdrawal'] }, async ({ page }) => {
+      const hostcourse = fixture('ADELE_FIXTURE_HOST_COURSE_13');
+      const entrycourse = fixtureCourse('T01');
+      const learner = fixture('ADELE_FIXTURE_HOST_DELETE');
+      const pathid = referencePath.id;
+      const activity = runLabel('E2E Einbettung gelöscht');
+      let cmid = '';
+      let node2before = '';
+
+      await test.step('precondition: the learner is on no path and not in the entry course', async () => {
+        expect(onPath(learner, pathid)).toBe(false);
+        expect(enrolmentsOf(learner, entrycourse)).toBe('none');
+        expect(enrolmentsOf(learner, hostcourse)).toBe('manual:active');
+      });
+
+      await test.step('the teacher embeds the path for the course\'s members; the learner completes T01', async () => {
+        await loginAs(page, env.adminUser, env.adminPassword);
+        await embedWith(page, hostcourse, activity, [SOURCE_THIS]);
+        cmid = await embeddingCmid(page, hostcourse, activity);
+        drainTaskQueue();
+        await loginAs(page, learner, fixturePassword());
+        await expectCourseOpenAfterTasks(page, entrycourse, 'the embedding carries the member into T01');
+        await completeCourse(page, entrycourse);
+        runCompletion();
+        await expect.poll(() => { drainTaskQueue(); return nodeStatus(page, hostcourse, activity, 'dndnode_1'); },
+          { message: 'T01 completed', timeout: 90_000, intervals: [2_000, 5_000] }).toBe('completed');
+        node2before = await nodeStatus(page, hostcourse, activity, 'dndnode_2');
+      });
+
+      await test.step('the teacher deletes the activity', async () => {
+        await loginAs(page, env.adminUser, env.adminPassword);
+        // Moodle's own delete route with its confirmation page.
+        await page.goto(`/course/mod.php?delete=${cmid}`);
+        await page.getByRole('button', { name: /^(Yes|Ja|Delete|Löschen)$/ }).first().click();
+        await expect(page).toHaveURL(/\/course\/view\.php/);
+        drainTaskQueue();
+      });
+
+      await test.step('deleted is gone: off the path, the ADELE enrolment in T01 gone, T01 closed - at once', async () => {
+        await expect.poll(() => { drainTaskQueue(); return onPath(learner, pathid); },
+          { message: 'the learner must no longer be on the path', timeout: 60_000 }).toBe(false);
+        expect(enrolmentsOf(learner, entrycourse), 'no enrolment left in T01').toBe('none');
+        await loginAs(page, learner, fixturePassword());
+        await expectCourseClosed(page, entrycourse, 'nothing justifies T01 any more');
+        expect(enrolmentsOf(learner, hostcourse), 'the own membership of the course stays').toBe('manual:active');
+      });
+
+      await test.step('the teacher restores the activity from the recycle bin', async () => {
+        await loginAs(page, env.adminUser, env.adminPassword);
+        await page.goto(`/admin/tool/recyclebin/index.php?contextid=${courseContextId(hostcourse)}`);
+        const row = page.locator('table tbody tr').filter({ hasText: activity });
+        await expect(row, 'the deleted activity is in the recycle bin').toHaveCount(1);
+        await row.getByRole('link', { name: /^(Restore|Wiederherstellen)$/ }).click();
+        await page.goto(`/course/view.php?id=${hostcourse}`);
+        await expect(page.getByRole('main').getByRole('link', { name: activity })).toBeVisible();
+        drainTaskQueue();
+      });
+
+      await test.step('restored: back on the path, from the courses - T01 completed, T02 as before', async () => {
+        await expect.poll(() => { drainTaskQueue(); return onPath(learner, pathid); },
+          { message: 'the restored embedding must carry the member again', timeout: 60_000 }).toBe(true);
+        await loginAs(page, learner, fixturePassword());
+        await expect.poll(async () => {
+          drainTaskQueue();
+          return `${await nodeStatus(page, hostcourse, activity, 'dndnode_1')} ${await nodeStatus(page, hostcourse, activity, 'dndnode_2')}`;
+        }, { message: 'progress read from the courses again', timeout: 90_000, intervals: [2_000, 5_000] })
+          .toBe(`completed ${node2before}`);
       });
     });
 });
