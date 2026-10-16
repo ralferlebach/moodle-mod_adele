@@ -116,14 +116,17 @@ function adele_update_instance($moduleinstance, $mform = null) {
     // path that reaches an update (some callers build a partial object), so
     // fall back to the stored value rather than reconcile a zero courseid.
     $courseid = $moduleinstance->course ?? $DB->get_field('adele', 'course', ['id' => $moduleinstance->id]);
-    adele_queue_host_reconcile((int) $moduleinstance->learningpathid, (int) $courseid);
+    // A saved setting is the teacher's decision, not a blip: whoever it leaves
+    // without a carrying embedding leaves the path now (decision of
+    // 2026-10-13), not after the nightly sweep and its delay.
+    adele_queue_host_reconcile((int) $moduleinstance->learningpathid, (int) $courseid, true);
 
     // Reconcile the learning path this activity no longer embeds, so the
     // access it used to justify is withdrawn now rather than at the next
     // nightly sweep. Queued for the OLD course id too, in case the activity
     // was moved between courses.
     if ($previous && (int) $previous->learningpathid !== (int) $moduleinstance->learningpathid) {
-        adele_queue_host_reconcile((int) $previous->learningpathid, (int) $previous->course);
+        adele_queue_host_reconcile((int) $previous->learningpathid, (int) $previous->course, true);
     }
 
     return $result;
@@ -176,9 +179,11 @@ function adele_delete_instance($id) {
  *
  * @param int $learningpathid The learning path the activity embeds.
  * @param int $hostcourseid The course the activity lives in.
+ * @param bool $withdrawuncarried Also withdraw, at once, every subscription to the path that no embedding carries any more
+ *                                (a teacher's save; decision of 2026-10-13).
  * @return void
  */
-function adele_queue_host_reconcile(int $learningpathid, int $hostcourseid): void {
+function adele_queue_host_reconcile(int $learningpathid, int $hostcourseid, bool $withdrawuncarried = false): void {
     if (!$learningpathid || !$hostcourseid) {
         return;
     }
@@ -193,6 +198,8 @@ function adele_queue_host_reconcile(int $learningpathid, int $hostcourseid): voi
     $task->set_custom_data([
         'learningpathid' => $learningpathid,
         'hostcourseid' => $hostcourseid,
+        // Read by enrol_adele from 2026100727 on; older versions ignore it.
+        'withdrawuncarried' => $withdrawuncarried,
     ]);
     \core\task\manager::queue_adhoc_task($task, true);
 }

@@ -33,10 +33,13 @@
  *               visible -> hidden -> none -> visible, for the sources
  *               "starting node" and "any course of the path"; a person with
  *               an enrolment of their own in the host course keeps it.
+ *               "none" suspends first and removes after the retention
+ *               period; "hidden" is never removed (decision of 2026-10-13).
  *   B  (H2)     a participant source removed from an embedding: the person
- *               who came only through it loses what it gave, the person of
- *               the other source keeps theirs, and nothing ADELE did not
- *               create is touched; restored, it gives it back.
+ *               who came only through it loses what it gave - when the form
+ *               is saved (decision of 2026-10-13) -, the person of the other
+ *               source keeps theirs, and nothing ADELE did not create is
+ *               touched; restored, it gives it back.
  *   C  (P1/P2)  "Participant results" taken back from "all" to "only own":
  *               the other learner is gone from the page AND from what the
  *               server hands out, also to a page opened before the change
@@ -160,12 +163,37 @@ function runNightlyReconcile(): void {
 }
 
 /**
- * enrol_adele removes an uncarried subscription only after this delay
- * (remove_user_path_adhoc::DELAY_SECONDS, 300 s), so that a resync or a bulk
- * import that briefly drops the carrying enrolment does not cost the learner
- * their history (enrol_adele #3).
+ * enrol_adele's retention period for suspended enrolments, in days, as this
+ * site has it configured (enrol_adele/suspendedretention).
  */
-const REMOVAL_DELAY_S = 300;
+function retentionDays(): number {
+  const out = execFileSync('php', ['-r', `
+    define('CLI_SCRIPT', true);
+    require('config.php');
+    echo (int) get_config('enrol_adele', 'suspendedretention');`],
+  { cwd: fixture('ADELE_MOODLE_ROOT'), encoding: 'utf8' });
+  return Number(out.trim().split('\n').pop());
+}
+
+/**
+ * Let the retention period pass on the server's test clock: one day past it,
+ * the nightly reconcile runs (its pass 8 removes what has been suspended for
+ * longer, unless it is suspended by design). Removals that run queues with a
+ * delay are run while the clock is still ahead; then the clock goes back.
+ */
+function afterRetentionPeriod(): void {
+  const days = retentionDays();
+  expect(days, 'the site must have a retention period, or nothing is ever removed').toBeGreaterThan(0);
+  const ahead = Date.now() / 1000 + (days + 1) * 86400;
+  try {
+    setServerTime(ahead);
+    runNightlyReconcile();
+    setServerTime(ahead + 400);
+    drainTaskQueue();
+  } finally {
+    resetServerTime();
+  }
+}
 
 for (const variant of [
   {
@@ -214,41 +242,32 @@ for (const variant of [
           await expectCourseOpenAfterTasks(page, hostcourse, '"visible" must open the host course');
         });
 
-        // "none" after an enrolment that was active: ADELE does not delete
-        // its enrolment but leaves it suspended - suspend-not-delete is
-        // enrol_adele's rule (reconciler, pass 8: removed after the retention
-        // period). Access is gone either way. Whether "none" should remove the
-        // record at once is the open decision "delete vs suspend" (#587);
-        // until it is taken, the current rule is pinned here, so that a
-        // change is seen.
-        for (const [mode, listed, enrolled, open] of [
-          [MODE_HIDDEN, 'Suspended', 'adele:suspended', false],
-          [MODE_NONE, 'Suspended', 'adele:suspended', false],
-          [MODE_VISIBLE, 'Active', 'adele:active', true],
-        ] as const) {
+        const changeTo = async (mode: string): Promise<void> => {
           await test.step(`the teacher changes the same activity to "${STORED_MODE[mode]}" and saves`, async () => {
             await loginAs(page, env.adminUser, env.adminPassword);
             await editEmbedding(page, cmid, { mode });
             expect(storedEmbedding(cmid).hostenrolmentmode, 'the form stored the new mode').toBe(STORED_MODE[mode]);
             drainTaskQueue();
           });
-
-          await test.step(`"${STORED_MODE[mode]}": listed as ${listed}; on the server ${enrolled}`, async () => {
+        };
+        const expectCarried = async (label: string, listed: string, enrolled: string, open: boolean): Promise<void> => {
+          await test.step(`${label}: listed as ${listed}; on the server ${enrolled}`, async () => {
+            await loginAs(page, env.adminUser, env.adminPassword);
             await expect.poll(async () => { drainTaskQueue(); return listedAs(page, hostcourse, carriedname); },
               { message: 'the participants list follows the mode', timeout: 60_000 }).toBe(listed);
             expect(enrolmentsOf(carried, hostcourse), 'the enrolment ADELE manages').toBe(enrolled);
           });
-
-          await test.step(`"${STORED_MODE[mode]}": real access, in a fresh session`, async () => {
+          await test.step(`${label}: real access, in a fresh session`, async () => {
             await loginAs(page, carried, fixturePassword());
             if (open) {
-              await expectCourseOpenAfterTasks(page, hostcourse, 'back to "visible", the host course opens again');
+              await expectCourseOpenAfterTasks(page, hostcourse, `${label}: the host course must open`);
             } else {
-              await expectCourseClosed(page, hostcourse, `"${STORED_MODE[mode]}" must close the host course`);
+              await expectCourseClosed(page, hostcourse, `${label}: the host course must stay closed`);
             }
           });
-
-          await test.step(`"${STORED_MODE[mode]}": the dual person keeps the enrolment of their own, and access`, async () => {
+        };
+        const expectDualKeepsOwn = async (label: string): Promise<void> => {
+          await test.step(`${label}: the dual person keeps the enrolment of their own, and access`, async () => {
             expect(enrolmentsOf(dual, hostcourse), 'their manual enrolment is untouched')
               .toMatch(/(^| )manual:active( |$)/);
             await loginAs(page, env.adminUser, env.adminPassword);
@@ -256,7 +275,37 @@ for (const variant of [
             await loginAs(page, dual, fixturePassword());
             await expectCourseOpenAnyEnrolment(page, hostcourse, 'an enrolment ADELE did not make keeps the course open');
           });
-        }
+        };
+
+        await changeTo(MODE_HIDDEN);
+        await expectCarried('"hidden"', 'Suspended', 'adele:suspended', false);
+        await expectDualKeepsOwn('"hidden"');
+
+        // Negative control for the retention rule below: a "hidden" record is
+        // suspended by design and keeps the learner countable - the nightly
+        // reconcile past the retention period must leave it alone.
+        await test.step('"hidden", past the retention period: the record stays', async () => {
+          afterRetentionPeriod();
+        });
+        await expectCarried('"hidden" after the retention period', 'Suspended', 'adele:suspended', false);
+
+        // "none" (decision of 2026-10-13): suspend first, remove later.
+        await changeTo(MODE_NONE);
+        await expectCarried('"none"', 'Suspended', 'adele:suspended', false);
+        await expectDualKeepsOwn('"none"');
+
+        await test.step('"none", past the retention period: the nightly reconcile removes the record', async () => {
+          afterRetentionPeriod();
+        });
+        await expectCarried('"none" after the retention period', 'absent', 'none', false);
+        await test.step('"none" after the retention period: the dual person has their own enrolment only', async () => {
+          expect(enrolmentsOf(dual, hostcourse)).toBe('manual:active');
+        });
+        await expectDualKeepsOwn('"none" after the retention period');
+
+        await changeTo(MODE_VISIBLE);
+        await expectCarried('back to "visible"', 'Active', 'adele:active', true);
+        await expectDualKeepsOwn('back to "visible"');
       });
   });
 }
@@ -306,27 +355,15 @@ test.describe('ADELE-E2E-H2 — a participant source taken back from an embeddin
         drainTaskQueue();
       });
 
-      await test.step('right after saving, A is still on the path: removal is deferred (enrol_adele #3)', async () => {
-        // As designed: the subscription carries the learner's history, so
-        // enrol_adele does not delete it on a settings change but in its
-        // nightly reconcile, after a delay. Pinned here so that a change of
-        // this rule is a decision, not an accident.
-        drainTaskQueue();
-        expect(onPath(a, pathid), 'A is still on the path right after the save').toBe(true);
-      });
-
-      await test.step('nightly reconcile, then the delay: A loses exactly what the removed source gave', async () => {
-        runNightlyReconcile();
-        try {
-          setServerTime(Date.now() / 1000 + REMOVAL_DELAY_S + 60);
-          await expect.poll(() => { drainTaskQueue(); return onPath(a, pathid); },
-            { message: 'A must no longer be on the path', timeout: 60_000 }).toBe(false);
-          await loginAs(page, a, fixturePassword());
-          await expect.poll(async () => { drainTaskQueue(); return courseAccess(page, entrycourse); },
-            { message: 'without the source, the entry course closes for A', timeout: 60_000 }).not.toBe('open');
-        } finally {
-          resetServerTime();
-        }
+      await test.step('A loses exactly what the removed source gave, when the form is saved', async () => {
+        // Decision of 2026-10-13: a saved setting is the teacher's decision,
+        // so it takes effect now - no nightly reconcile, no delay, no clock.
+        // (The delay of enrol_adele #3 stays for enrolment events.)
+        await expect.poll(() => { drainTaskQueue(); return onPath(a, pathid); },
+          { message: 'A must no longer be on the path', timeout: 60_000 }).toBe(false);
+        expect(enrolmentsOf(a, entrycourse), "A's ADELE enrolment in the entry course is gone too").toBe('none');
+        await loginAs(page, a, fixturePassword());
+        await expectCourseClosed(page, entrycourse, 'without the source, the entry course closes for A');
       });
 
       await test.step('nothing ADELE did not create is touched: A\'s own enrolment in the host course stays', async () => {
