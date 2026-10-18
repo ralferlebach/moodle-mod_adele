@@ -59,5 +59,12 @@ export default defineConfig({
   },
   projects: [
     { name: 'chromium', use: { ...devices['Desktop Chrome'] } },
+    // The browser-dependent stories once more in Firefox (mod_adele #32):
+    // refresh on focus and visibility, polling, auto-focus, the identity of
+    // expanded stacked courses. Only where Firefox is installed - the E2E
+    // workflow installs it and sets ADELE_E2E_FIREFOX.
+    ...(process.env.ADELE_E2E_FIREFOX
+      ? [{ name: 'firefox', use: { ...devices['Desktop Firefox'] }, grep: /@story:(R26|F27|S17)\b/ }]
+      : []),
   ],
 });

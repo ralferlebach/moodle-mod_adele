@@ -39,6 +39,7 @@ use advanced_testcase;
  * @license     http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  * @covers      \mod_adele_observer
  * @covers      \mod_adele\local\host_policy::has_foreign_enrolment
+ * @group      adele_release
  */
 final class participant_source_test extends advanced_testcase {
     /** @var \stdClass The shared host course. */

@@ -312,6 +312,7 @@ function mod_adele_cm_info_view(cm_info $cm) {
                     'readonly' => $mode['readonly'],
                     'wwwroot' => $CFG->wwwroot,
                     'version' => $CFG->version,
+                    'pathviewsettings' => \local_adele\path_view_settings::for_template(),
                     ]
                 );
             } else {
@@ -335,6 +336,7 @@ function mod_adele_cm_info_view(cm_info $cm) {
                     'view' => "student",
                     'wwwroot' => $CFG->wwwroot,
                     'version' => $CFG->version,
+                    'pathviewsettings' => \local_adele\path_view_settings::for_template(),
                     ]
                 );
             } else {

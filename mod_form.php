@@ -23,7 +23,7 @@
  * @license     https://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 
-use local_adele\learning_paths;
+use mod_adele\local\path_choice;
 use mod_adele\local\teacher_access_mode;
 
 defined('MOODLE_INTERNAL') || die();
@@ -83,12 +83,20 @@ class mod_adele_mod_form extends moodleform_mod {
             '</a>'
         );
 
-        $records = learning_paths::get_editable_learning_paths();
-
-        $select = [];
-        $select[0] = get_string('noselection', 'form');
-        foreach ($records as $record) {
-            $select[$record->id] = $record->name;
+        // The paths the person may edit, and the one an existing activity
+        // embeds: it can be kept by whoever may edit the activity, even
+        // without editing rights on the path (mod_adele #43). Validation
+        // decides on the server what may be set.
+        $stored = $this->stored_learningpathid();
+        $select = [0 => get_string('noselection', 'form')] + path_choice::options($stored);
+        if ($stored && !isset($select[$stored])) {
+            // Embedded, but the path is gone: say so, and let a new one be chosen.
+            $mform->addElement(
+                'static',
+                'learningpathmissing',
+                '',
+                \html_writer::div(get_string('mform_path_missing_stored', 'mod_adele'), 'alert alert-warning')
+            );
         }
 
         $options = [
@@ -233,8 +241,9 @@ class mod_adele_mod_form extends moodleform_mod {
     public function validation($data, $files): array {
         $errors = parent::validation($data, $files);
 
-        if (empty($data['learningpathid'])) {
-            $errors['learningpathid'] = get_string('mform_options_required', 'mod_adele');
+        $reason = path_choice::check((int) ($data['learningpathid'] ?? 0), $this->stored_learningpathid());
+        if ($reason !== path_choice::OK) {
+            $errors['learningpathid'] = get_string($reason, 'mod_adele');
         }
 
         if (empty($data['participantslist'])) {
@@ -271,6 +280,19 @@ class mod_adele_mod_form extends moodleform_mod {
     private function mode_context(): \context {
         $cm = $this->get_coursemodule();
         return $cm ? \context_module::instance($cm->id) : \context_course::instance($this->get_course()->id);
+    }
+
+    /**
+     * The learning path the activity embeds now - 0 for a new one.
+     *
+     * @return int
+     */
+    private function stored_learningpathid(): int {
+        global $DB;
+        if (empty($this->_instance)) {
+            return 0;
+        }
+        return (int) $DB->get_field('adele', 'learningpathid', ['id' => $this->_instance]);
     }
 
     /**

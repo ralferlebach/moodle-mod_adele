@@ -35,6 +35,7 @@ use mod_adele\local\host_policy;
  * @copyright  2026 Ralf Erlebach
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  * @covers     \mod_adele\local\host_policy::get_affected_pairs
+ * @covers     \mod_adele\local\host_policy::get_entitlement
  * @covers     \mod_adele_observer
  */
 final class host_priority_order_test extends advanced_testcase {
@@ -165,5 +166,64 @@ final class host_priority_order_test extends advanced_testcase {
                 enrol_get_plugin('manual')->unenrol_user($instance, $user->id);
             }
         }
+    }
+
+    /**
+     * Every combination, every order (re-audit TP-07, #23): one to three
+     * entitling embeddings with any of the three modes, in every insertion
+     * order, plus a non-entitling one of any mode at any position - the
+     * decision is always "entitled, the most generous mode of the entitling
+     * embeddings" (visible > hidden > none), the same from the live path
+     * (get_affected_pairs) and the sweep (get_entitlement), and the
+     * non-entitling embedding never changes it.
+     *
+     * @return void
+     */
+    public function test_most_generous_wins_in_every_combination_and_order(): void {
+        global $DB;
+        $modes = ['visible', 'hidden', 'none'];
+        $sequences = [[]];
+        for ($length = 1; $length <= 3; $length++) {
+            $next = [];
+            foreach ($sequences as $sequence) {
+                if (count($sequence) === $length - 1) {
+                    foreach ($modes as $mode) {
+                        $next[] = array_merge($sequence, [$mode]);
+                    }
+                }
+            }
+            $sequences = array_merge($sequences, $next);
+        }
+        $sequences = array_values(array_filter($sequences));
+        $this->assertCount(3 + 9 + 27, $sequences);
+        $user = $this->getDataGenerator()->create_user();
+        $this->getDataGenerator()->enrol_user($user->id, $this->courses['B']->id, 'student');
+        $checked = 0;
+        foreach ($sequences as $sequence) {
+            $best = array_reduce(
+                $sequence,
+                fn($carry, $m) => host_policy::mode_rank($m) > host_policy::mode_rank($carry) ? $m : $carry,
+                'none'
+            );
+            foreach (array_merge([null], $modes) as $noise) {
+                for ($at = 0; $at <= ($noise === null ? 0 : count($sequence)); $at++) {
+                    $embeddings = array_map(fn($m) => ['H1', '3', $m], $sequence);
+                    if ($noise !== null) {
+                        array_splice($embeddings, $at, 0, [['H1', '2', $noise]]);
+                    }
+                    $DB->delete_records('adele');
+                    $this->embed($embeddings);
+                    $label = json_encode($embeddings);
+                    $this->assertSame(['H1' => [true, $best]], $this->decisions((int) $user->id), "live: $label");
+                    $this->assertSame(
+                        [true, $best],
+                        host_policy::get_entitlement($this->lpid, (int) $this->courses['H1']->id, (int) $user->id),
+                        "sweep: $label"
+                    );
+                    $checked++;
+                }
+            }
+        }
+        $this->assertGreaterThan(300, $checked);
     }
 }

@@ -274,7 +274,14 @@ jobs:
           # npm ci, not npm install: it fails loudly when the lockfile is
           # missing rather than resolving whatever is current that day.
           npm ci
-          npx playwright install --with-deps chromium
+          # Firefox for the browser-dependent stories (mod_adele #32, see
+          # playwright.config.ts); a plugin whose suite has none skips it.
+          if grep -q "ADELE_E2E_FIREFOX" playwright.config.ts; then
+            npx playwright install --with-deps chromium firefox
+            echo "ADELE_E2E_FIREFOX=1" >> "$GITHUB_ENV"
+          else
+            npx playwright install --with-deps chromium
+          fi
           # The server test clock for the time chains (plan section 9):
           # libfaketime, preloaded into the PHP processes only.
           sudo apt-get install -y -qq faketime >/dev/null

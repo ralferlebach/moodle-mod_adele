@@ -511,4 +511,98 @@ final class teacher_enrolment_test extends advanced_testcase {
         enrol_in_node_course::execute($this->ctx(1), (int) $this->courses['B']->id);
         $this->assertSame(['teacher'], $this->granted('B', 'tutor'), 'Saved again with authority: delegated again.');
     }
+
+    /**
+     * Privacy in bulk (re-audit TP-06, TP-08): the delegating person and the
+     * teacher deleted together in one activity's context - that activity's
+     * grant goes, the grant another activity gives independently stays;
+     * deleting everybody in the second context takes the rest. Afterwards:
+     * no ADELE role assignment without a grant behind it, no grant of an
+     * activity without authority, the teacher's own enrolments untouched.
+     */
+    public function test_privacy_in_bulk_keeps_independent_access(): void {
+        global $DB;
+        set_config('teachercourseaccesspolicy', mode::POLICY_DELEGATE, 'mod_adele');
+        $b = (int) $this->courses['B']->id;
+        $tutor = (int) $this->people['tutor']->id;
+        $this->setUser($this->people['editor']);
+        $this->save_mode(1, mode::ENROL_TEACHER);
+        $this->setAdminUser();
+        $this->save_mode(2, mode::ENROL_TEACHER);
+        $this->setUser($this->people['tutor']);
+        enrol_in_node_course::execute($this->ctx(1), $b);
+        // Activity 2 gives the same access on its own (the course is open
+        // already, so the service refuses a second request): its grant.
+        teacher_grants::add(
+            (int) $this->activities[2]->cmid,
+            $this->lpid,
+            $b,
+            $tutor,
+            mode::ENROL_TEACHER,
+            mode::target_role(mode::ENROL_TEACHER)
+        );
+        $this->setAdminUser();
+        $this->assertSame(['teacher'], $this->granted('B', 'tutor'));
+        $this->assertCount(2, teacher_grants::get(['userid' => $tutor]), 'One grant per activity.');
+
+        \mod_adele\privacy\provider::delete_data_for_users(new \core_privacy\local\request\approved_userlist(
+            context_module::instance($this->activities[1]->cmid),
+            'mod_adele',
+            [(int) $this->people['editor']->id, $tutor]
+        ));
+        $this->assertSame([mode::ENROL_TEACHER, 0], $this->stored(1));
+        $this->assertSame([mode::ENROL_TEACHER, (int) get_admin()->id], $this->stored(2), 'The other activity untouched.');
+        $this->assertSame([], teacher_grants::get(['cmid' => $this->activities[1]->cmid]), 'No authority: its grant goes.');
+        $this->assertSame(['teacher'], $this->granted('B', 'tutor'), 'The independent grant of activity 2 stays.');
+
+        \mod_adele\privacy\provider::delete_data_for_all_users_in_context(context_module::instance($this->activities[2]->cmid));
+        $this->assertSame([mode::ENROL_TEACHER, 0], $this->stored(2));
+        $this->assertSame([], $this->granted('B', 'tutor'));
+        $this->assertSame([], teacher_grants::get(['userid' => $tutor]));
+
+        // Invariants: no role assignment of enrol_adele's teacher instances
+        // without a grant behind it; the tutor's own roles stay.
+        $this->assertSame(0, $DB->count_records_sql(
+            "SELECT COUNT(1) FROM {role_assignments} ra
+               JOIN {enrol} e ON e.id = ra.itemid AND e.enrol = 'adele'
+              WHERE ra.component = 'enrol_adele' AND ra.userid = :u",
+            ['u' => $tutor]
+        ), 'No ADELE role assignment left for the tutor.');
+        foreach (['host1', 'host2'] as $host) {
+            $this->assertTrue(
+                is_enrolled(context_course::instance($this->courses[$host]->id), $tutor),
+                "Own enrolment in $host stays."
+            );
+        }
+        $this->assertTrue($DB->record_exists('adele', ['id' => $this->activities[1]->id]), 'The activities stay.');
+    }
+
+    /**
+     * Opening the teacher view gives no right (re-audit TP-08): the view
+     * mode, the course list of the view and a refused enrolment - under
+     * policy 3 with a delegated teacher mode - change no role assignment and
+     * no enrolment; only the explicit action enrols.
+     */
+    public function test_opening_the_teacher_view_grants_nothing(): void {
+        global $DB;
+        set_config('teachercourseaccesspolicy', mode::POLICY_DELEGATE, 'mod_adele');
+        $this->setUser($this->people['editor']);
+        $this->save_mode(1, mode::ENROL_TEACHER);
+        $snapshot = fn() => [$DB->count_records('role_assignments'), $DB->count_records('user_enrolments')];
+        $before = $snapshot();
+
+        $this->setUser($this->people['tutor']);
+        $context = context_module::instance($this->activities[1]->cmid);
+        for ($i = 0; $i < 3; $i++) {
+            \mod_adele\local\view_mode::for_context($context);
+            $this->assertSame('enrol', $this->rows()['TE-B']);
+        }
+        $outside = (int) $this->courses['outside']->id;
+        $this->refused('accessrequest_notinpath', fn() => enrol_in_node_course::execute($this->ctx(1), $outside));
+        $this->assertSame($before, $snapshot(), 'Looking changed nothing.');
+        $this->assertSame([], $this->granted('B', 'tutor'));
+
+        enrol_in_node_course::execute($this->ctx(1), (int) $this->courses['B']->id);
+        $this->assertSame(['teacher'], $this->granted('B', 'tutor'), 'Only the action enrols.');
+    }
 }

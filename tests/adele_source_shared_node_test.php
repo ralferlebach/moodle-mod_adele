@@ -46,6 +46,7 @@ use context_course;
  * @covers     \mod_adele\local\host_policy
  * @covers     \mod_adele_observer
  * @covers     \enrol_adele\observer::is_user_carried
+ * @group      adele_release
  */
 final class adele_source_shared_node_test extends advanced_testcase {
     /** @var \stdClass[] Courses by key. */

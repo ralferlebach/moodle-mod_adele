@@ -114,6 +114,7 @@ if (
                 'wwwroot' => $CFG->wwwroot,
                 'version' => $CFG->version,
                 'stringsrev' => get_config('local_adele', 'version'),
+                'pathviewsettings' => \local_adele\path_view_settings::for_template(),
                 ]
             );
         } else {
@@ -135,6 +136,7 @@ if (
                 'wwwroot' => $CFG->wwwroot,
                 'version' => $CFG->version,
                 'stringsrev' => get_config('local_adele', 'version'),
+                'pathviewsettings' => \local_adele\path_view_settings::for_template(),
                 ]
             );
         } else {

@@ -269,4 +269,44 @@ final class restore_policy_test extends advanced_testcase {
             array_map('intval', \local_adele\enrol_state::get_learningpaths_embedded_in_course((int) $after->course))
         );
     }
+
+    /**
+     * Restore with user data for each host enrolment mode (re-audit TP-06,
+     * #22, #29): the learner qualifying on this site is enrolled in the new
+     * course as the restored mode says - active (visible), suspended
+     * (hidden), not at all (none).
+     */
+    public function test_each_mode_restored_with_users_gives_its_enrolments(): void {
+        global $DB;
+        foreach (['visible' => ENROL_USER_ACTIVE, 'hidden' => ENROL_USER_SUSPENDED, 'none' => null] as $mode => $status) {
+            $DB->set_field('adele', 'hostenrolmentmode', $mode, ['id' => $this->activity->id]);
+            $after = $this->roundtrip(true);
+            $this->assertSame($mode, $after->hostenrolmentmode);
+            $adele = $DB->get_records_sql(
+                "SELECT ue.userid, ue.status FROM {user_enrolments} ue JOIN {enrol} e ON e.id = ue.enrolid
+                  WHERE e.courseid = :c AND e.enrol = 'adele'",
+                ['c' => $after->course]
+            );
+            if ($status === null) {
+                $this->assertSame([], $adele, 'none: nobody enrolled.');
+            } else {
+                $this->assertSame([(int) $this->learner->id], array_map('intval', array_keys($adele)), $mode);
+                $this->assertSame($status, (int) reset($adele)->status, $mode);
+            }
+        }
+    }
+
+    /**
+     * The grantor of a teacher mode is only kept where the restore maps the
+     * person (re-audit TP-06): from another site the stored user id would be
+     * a stranger - nobody, so the mode gives no enrolment (not authorised).
+     */
+    public function test_a_grantor_from_another_site_has_no_authority(): void {
+        global $DB;
+        $stranger = $this->getDataGenerator()->create_user();
+        $DB->set_field('adele', 'teachercourseaccessgrantor', $stranger->id, ['id' => $this->activity->id]);
+        $after = $this->roundtrip(false, true);
+        $this->assertSame(0, (int) $after->teachercourseaccessgrantor, 'No user id carried over without a mapping.');
+        $this->assertSame(0, (int) $after->learningpathid);
+    }
 }
