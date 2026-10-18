@@ -31,7 +31,8 @@ use moodle_url;
  *
  * Whatever the activity's teacher access mode (teacher_access_mode), a
  * course that is open gets its link; the mode only decides what happens
- * without access. Nobody is enrolled and nothing is requested here.
+ * without access: with "request", the row offers a request (access_request).
+ * Nobody is enrolled and nothing is sent here.
  *
  * @package    mod_adele
  * @copyright  2026 Wunderbyte GmbH
@@ -45,6 +46,12 @@ class node_course_access {
     /** @var string The person cannot open the course. */
     public const STATUS_NONE = 'none';
 
+    /** @var string No access; the person may send a request to the course's responsible people. */
+    public const STATUS_REQUEST = 'request';
+
+    /** @var string No access; "request" mode, but the course has nobody to ask: a text to copy. */
+    public const STATUS_REQUEST_COPY = 'request_copy';
+
     /**
      * The node courses of the learning path an activity embeds, each with the
      * nodes it belongs to and its access status for the current user.
@@ -53,7 +60,8 @@ class node_course_access {
      * @return array[] One entry per course, in path order.
      */
     public static function for_activity($cm): array {
-        global $DB;
+        global $DB, $USER;
+        $request = teacher_access_mode::for_instance((int) $cm->instance) === teacher_access_mode::REQUEST;
 
         $learningpathid = (int) $DB->get_field('adele', 'learningpathid', ['id' => $cm->instance]);
         $json = $learningpathid
@@ -93,6 +101,14 @@ class node_course_access {
                 'nodeids' => array_values(array_unique(array_filter($nodeids))),
                 'status' => $open ? self::STATUS_OPEN : self::STATUS_NONE,
             ];
+            if (!$open && $request) {
+                // Mode "request": ask the people responsible for this course -
+                // or, if it has none, a text to copy; never a button that
+                // pretends to work (local_adele #600, TP2).
+                $entry['status'] = access_request::recipients($courseid, (int) $USER->id)
+                    ? self::STATUS_REQUEST
+                    : self::STATUS_REQUEST_COPY;
+            }
             if ($open) {
                 $entry['url'] = (new moodle_url('/course/view.php', ['id' => $courseid]))->out(false);
             }

@@ -37,80 +37,11 @@
  * @license     http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 
-import { test, expect, Page } from '@playwright/test';
+import { test, expect } from '@playwright/test';
 import { env, loginAs } from '../support/env';
-import { callService, fixture, fixturePassword, reseedFixtures } from '../support/fixtures';
+import { fixture, fixturePassword, reseedFixtures } from '../support/fixtures';
 import { embedWith, embeddingCmid, SOURCE_START, storedEmbedding } from '../support/host';
-
-const SETTINGS = '/admin/settings.php?section=modsettingadele';
-const LABEL = {
-  existing_only: 'Existing access only',
-  request: 'Request access',
-  enrol_student: 'Enrol as participant',
-  enrol_teacher: 'Enrol as non-editing teacher',
-  enrol_editingteacher: 'Enrol as teacher (with editing rights)',
-} as const;
-type Mode = keyof typeof LABEL;
-
-/**
- * As administrator: tick exactly the given modes and set the default, on
- * Moodle's administration page.
- *
- * @param page The page, logged in as administrator.
- * @param modes The modes to allow.
- * @param fallback The default for new activities.
- */
-async function siteAllows(page: Page, modes: Mode[], fallback: Mode): Promise<void> {
-  await page.goto(SETTINGS);
-  for (const mode of Object.keys(LABEL) as Mode[]) {
-    const box = page.locator(`#id_s_mod_adele_teachercourseaccessmodes_${mode}`);
-    await box.setChecked(modes.includes(mode));
-  }
-  await page.locator('#id_s_mod_adele_teachercourseaccessdefault').selectOption(fallback);
-  await page.getByRole('button', { name: /Save changes|Änderungen speichern/ }).click();
-  await expect(page.locator('.alert-success, .alert-info').first()).toBeVisible();
-}
-
-/**
- * Open an activity's settings and show the more options of the learning
- * path section.
- *
- * @param page The page.
- * @param url The form's address.
- */
-async function openForm(page: Page, url: string) {
-  await page.goto(url);
-  const select = page.locator('#id_teachercourseaccessmode');
-  if (!(await select.isVisible())) {
-    await page.locator('#id_adelefieldset .moreless-toggler').click();
-  }
-  await expect(select).toBeVisible();
-  return select;
-}
-
-/**
- * The options a select offers, as "value=label".
- *
- * @param select The select.
- */
-async function offered(select: ReturnType<Page['locator']>): Promise<string[]> {
-  return select.locator('option').evaluateAll((options) =>
-    options.map((o) => `${(o as HTMLOptionElement).value}=${(o.textContent || '').trim()}`));
-}
-
-/**
- * The mode the teacher view acts with, as the service names it.
- *
- * @param page The page, logged in as a teacher of the activity.
- */
-async function actingMode(page: Page): Promise<string> {
-  await page.goto(`/mod/adele/view.php?id=${fixture('ADELE_FIXTURE_KZ_CM')}`);
-  const answer = await callService(page, 'mod_adele_get_node_course_access', {
-    contextid: Number(fixture('ADELE_FIXTURE_KZ_CM_CONTEXT')),
-  });
-  expect(answer.error, 'the teacher gets an answer').toBeUndefined();
-  return String((answer.data as { mode?: string })?.mode);
-}
+import { actingMode, LABEL, offered, openForm, siteAllows } from '../support/teacheraccess';
 
 test.beforeAll(() => reseedFixtures());
 

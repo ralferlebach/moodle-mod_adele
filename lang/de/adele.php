@@ -26,6 +26,15 @@
 
 defined('MOODLE_INTERNAL') || die();
 
+$string['accessrequest_badtext'] = 'Die Nachricht darf nicht leer und nicht länger als {$a} Zeichen sein.';
+$string['accessrequest_context'] = 'Gesendet von {$a->from} aus dem Lernpfad „{$a->path}“ im Kurs „{$a->host}“. Angefragter Kurs: „{$a->target}“. Seine Teilnehmer/innen: {$a->participants}';
+$string['accessrequest_draft'] = 'Ich unterrichte im Kurs „{$a->host}“ und benötige zur Betreuung des Lernpfads „{$a->path}“ Zugriff auf „{$a->target}“. Bitte prüfen Sie, ob mir eine geeignete Kursrolle zugewiesen werden kann.';
+$string['accessrequest_hasaccess'] = 'Sie können diesen Kurs bereits öffnen.';
+$string['accessrequest_norecipient'] = 'Diese Person kann nicht um Zugang zu diesem Kurs gebeten werden.';
+$string['accessrequest_notallowed'] = 'Diese Aktivität bietet keine Anfrage nach Kurszugang an.';
+$string['accessrequest_notinpath'] = 'Dieser Kurs gehört nicht zum Lernpfad dieser Aktivität.';
+$string['accessrequest_notsent'] = 'Die Anfrage konnte nicht gesendet werden.';
+$string['accessrequest_subject'] = 'Anfrage nach Zugang zu „{$a->target}“';
 $string['adele:addinstance'] = 'Lernpfad-Instanz hinzufügen';
 $string['adele:addlearningpath'] = 'Kann Lernpfade hinzufügen';
 $string['adele:readinstance'] = 'Darf Lernpfad-Instanzen sehen';
@@ -39,7 +48,9 @@ $string['completionlearningpathfinished:desc'] = 'Aktivität wird abgeschlossen 
 $string['error_adaptivequiz_mismatch'] = 'Der adaptive Test im Kurs passt nicht zu dem im Lernpfad referenzierten Test.';
 $string['error_diverse_scales'] = 'Es wurden unterschiedliche Skalen referenziert. Bitte korrigieren.';
 $string['error_multiple_adaptivequiz'] = 'Es wurde mehr als ein adaptiver Test im Kurs gefunden. Bei Nutzung eines Lernpfads ist nur einer erlaubt.';
+$string['event_course_access_requested'] = 'Kurszugang angefragt';
 $string['learningpathdeleted'] = 'Der Lernpfad, den diese Aktivität eingebettet hat, wurde gelöscht.';
+$string['messageprovider:courseaccessrequest'] = 'Anfragen von Lehrenden nach Zugang zu einem Kurs eines Lernpfads';
 $string['mform_options_create_learningpath'] = 'Neuen Lernpfad erstellen';
 $string['mform_options_hostenrolmentmode_hidden'] = 'verdeckt (als deaktivierte Einschreibung)';
 $string['mform_options_hostenrolmentmode_none'] = 'keine Einschreibung vornehmen';
@@ -81,3 +92,9 @@ $string['teachercourseaccessmode_refused'] = 'Dieser Modus ist auf dieser Websit
 $string['teachercourseaccessmode_request'] = 'Zugang anfragen';
 $string['teachercourseaccessmodes'] = 'Zugelassene Modi';
 $string['teachercourseaccessmodes_desc'] = 'Die Modi, die eine Aktivität wählen darf. „Nur vorhandener Zugang“ ist immer zugelassen. Ein hier entzogener Modus wirkt in jeder Aktivität, die ihn gespeichert hat, wie „Nur vorhandener Zugang“.';
+$string['teachercourseaccessrequestfallback'] = 'Ansprechpartner, wenn niemand gefragt werden kann';
+$string['teachercourseaccessrequestfallback_desc'] = 'Wird bei „Zugang anfragen“ angezeigt, wenn ein Kurs niemanden hat, der gefragt werden kann – etwa die Adresse Ihres Supports. Die Lehrperson kann die vorausgefüllte Nachricht kopieren und dorthin senden.';
+$string['teachercourseaccessrequestrecipients'] = 'Wer gefragt wird';
+$string['teachercourseaccessrequestrecipients_desc'] = 'Eine Anfrage geht an ein aktives Mitglied des angefragten Kurses – nie an die Lehrenden des Kurses, der den Lernpfad einbettet. Hier wird gewählt, an welche Mitglieder.';
+$string['teachercourseaccessrequestrecipients_enrolers'] = 'Mitglieder, die einschreiben dürfen (enrol/manual:enrol)';
+$string['teachercourseaccessrequestrecipients_enrolreview'] = 'Mitglieder, die Einschreibungen prüfen dürfen (moodle/course:enrolreview)';

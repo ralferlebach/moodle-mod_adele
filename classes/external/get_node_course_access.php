@@ -62,7 +62,26 @@ class get_node_course_access extends external_api {
      */
     public static function execute(int $contextid): array {
         $params = self::validate_parameters(self::execute_parameters(), ['contextid' => $contextid]);
-        $context = context::instance_by_id($params['contextid']);
+        $cm = self::require_teacher_view($params['contextid']);
+
+        return [
+            // The mode that acts: the activity's own while the site allows it
+            // (issue local_adele #600, TP3).
+            'mode' => \mod_adele\local\teacher_access_mode::for_instance((int) $cm->instance),
+            'courses' => node_course_access::for_activity($cm),
+        ];
+    }
+
+    /**
+     * The course module of a mod_adele activity whose teacher view the
+     * current user has - or an exception. Shared by the services of the
+     * teacher view's course access.
+     *
+     * @param int $contextid Context of the mod_adele activity.
+     * @return \stdClass The course module.
+     */
+    public static function require_teacher_view(int $contextid): \stdClass {
+        $context = context::instance_by_id($contextid);
         if (!$context instanceof context_module) {
             throw new moodle_exception('invalidcontext', 'error');
         }
@@ -73,13 +92,7 @@ class get_node_course_access extends external_api {
         if ($mode['view'] !== 'teacher') {
             throw new \required_capability_exception($context, 'local/adele:viewparticipants', 'nopermissions', '');
         }
-
-        return [
-            // The mode that acts: the activity's own while the site allows it
-            // (issue local_adele #600, TP3).
-            'mode' => \mod_adele\local\teacher_access_mode::for_instance((int) $cm->instance),
-            'courses' => node_course_access::for_activity($cm),
-        ];
+        return $cm;
     }
 
     /**
@@ -97,7 +110,10 @@ class get_node_course_access extends external_api {
                 'nodeids' => new external_multiple_structure(
                     new external_value(PARAM_ALPHANUMEXT, 'A node of the path this course belongs to')
                 ),
-                'status' => new external_value(PARAM_ALPHA, 'open: the person can open the course; none: not'),
+                'status' => new external_value(
+                    PARAM_ALPHANUMEXT,
+                    'open: the person can open the course; none: not; request: may ask; request_copy: nobody to ask'
+                ),
                 'url' => new external_value(PARAM_URL, 'The course, only when it is open to the person', VALUE_OPTIONAL),
             ])),
         ]);

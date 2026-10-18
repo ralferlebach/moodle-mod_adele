@@ -35,4 +35,20 @@ $functions = [
         // (view_mode), with or without local/adele:teacheredit.
         'capabilities' => '',
     ],
+    'mod_adele_get_access_request' => [
+        'classname' => 'mod_adele\external\get_access_request',
+        'description' => 'Recipients and prefilled message for a request for access to a node course.',
+        'type' => 'read',
+        'ajax' => true,
+        // Decided in the function: teacher view, mode "request", course of the path, no access yet.
+        'capabilities' => '',
+    ],
+    'mod_adele_send_access_request' => [
+        'classname' => 'mod_adele\external\send_access_request',
+        'description' => 'Send a teacher\'s request for access to a node course to one of its responsible people.',
+        'type' => 'write',
+        'ajax' => true,
+        // Decided in the function, as for mod_adele_get_access_request, plus the recipient.
+        'capabilities' => '',
+    ],
 ];

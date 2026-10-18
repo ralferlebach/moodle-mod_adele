@@ -26,6 +26,15 @@
 
 defined('MOODLE_INTERNAL') || die();
 
+$string['accessrequest_badtext'] = 'The message must not be empty and not longer than {$a} characters.';
+$string['accessrequest_context'] = 'Sent by {$a->from} from the learning path "{$a->path}" in the course "{$a->host}". Course asked for: "{$a->target}". Its participants: {$a->participants}';
+$string['accessrequest_draft'] = 'I teach in the course "{$a->host}" and, to look after the learning path "{$a->path}", I need access to "{$a->target}". Could you please check whether I can be given a suitable role in that course?';
+$string['accessrequest_hasaccess'] = 'You can already open this course.';
+$string['accessrequest_norecipient'] = 'This person cannot be asked for access to this course.';
+$string['accessrequest_notallowed'] = 'This activity does not offer requests for course access.';
+$string['accessrequest_notinpath'] = 'This course is not part of the learning path of this activity.';
+$string['accessrequest_notsent'] = 'The request could not be sent.';
+$string['accessrequest_subject'] = 'Request for access to "{$a->target}"';
 $string['adele:addinstance'] = 'Add Learning path Instance';
 $string['adele:addlearningpath'] = 'Can add learning paths';
 $string['adele:readinstance'] = 'Is allowed to view instances of the learning path plugin';
@@ -39,7 +48,9 @@ $string['completionlearningpathfinished:desc'] = 'Activity completion will be tr
 $string['error_adaptivequiz_mismatch'] = 'The adaptive quiz in the course does not match the one referenced in the learning path.';
 $string['error_diverse_scales'] = 'Different scales were referenced. Please fix this.';
 $string['error_multiple_adaptivequiz'] = 'More than one adaptive quiz was found in the course. Only one is allowed when a learning path is used.';
+$string['event_course_access_requested'] = 'Course access requested';
 $string['learningpathdeleted'] = 'The learning path this activity embedded has been deleted.';
+$string['messageprovider:courseaccessrequest'] = 'Requests from teachers for access to a course of a learning path';
 $string['mform_options_create_learningpath'] = 'Create new learning path';
 $string['mform_options_hostenrolmentmode_hidden'] = 'hidden (as a suspended enrolment)';
 $string['mform_options_hostenrolmentmode_none'] = 'no enrolment at all';
@@ -81,3 +92,9 @@ $string['teachercourseaccessmode_refused'] = 'This mode is not allowed on this s
 $string['teachercourseaccessmode_request'] = 'Request access';
 $string['teachercourseaccessmodes'] = 'Allowed modes';
 $string['teachercourseaccessmodes_desc'] = 'The modes an activity may choose. "Existing access only" is always allowed. A mode taken away here acts as "Existing access only" in every activity that has stored it.';
+$string['teachercourseaccessrequestfallback'] = 'Contact when nobody can be asked';
+$string['teachercourseaccessrequestfallback_desc'] = 'Shown with "Request access" when a course has nobody who may be asked - for example the address of your support. The teacher can copy the prefilled message and send it there.';
+$string['teachercourseaccessrequestrecipients'] = 'Who is asked';
+$string['teachercourseaccessrequestrecipients_desc'] = 'A request goes to one active member of the course asked for - never to the teachers of the course that embeds the learning path. Chosen here: which members.';
+$string['teachercourseaccessrequestrecipients_enrolers'] = 'Members who may enrol people (enrol/manual:enrol)';
+$string['teachercourseaccessrequestrecipients_enrolreview'] = 'Members who may review enrolments (moodle/course:enrolreview)';

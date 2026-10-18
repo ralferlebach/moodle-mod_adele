@@ -15,9 +15,13 @@
     "K5",
     "K6",
     "K7",
-    "K8"
+    "K8",
+    "K9",
+    "K10",
+    "K11",
+    "K12"
   ],
-  "note": "Sections 16 and 17 of the test plan; K1-K8: local_adele #600 \"Kurszugriff in der Lehrendenansicht\" (TP1, TP3).",
+  "note": "Sections 16 and 17 of the test plan; K1-K12: local_adele #600 \"Kurszugriff in der Lehrendenansicht\" (TP1-TP3).",
   "withdrawal": [
     "H1",
     "H2",
@@ -25,7 +29,9 @@
     "P1",
     "P2",
     "K4",
-    "K7"
+    "K7",
+    "K11",
+    "K12"
   ],
   "withdrawalNote": "Stories that are reversible: each needs a passed test tagged @withdrawal that takes the setting back (E2E issue, addendum of 2026-10-13)."
 }

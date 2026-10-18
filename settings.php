@@ -57,4 +57,27 @@ if ($ADMIN->fulltree) {
         teacher_access_mode::EXISTING_ONLY,
         $modes
     ));
+
+    // For "Request access" (TP2): whom a teacher may ask, and what to tell them
+    // when the course has nobody to ask.
+    $settings->add(new admin_setting_configselect(
+        'mod_adele/teachercourseaccessrequestrecipients',
+        get_string('teachercourseaccessrequestrecipients', 'mod_adele'),
+        get_string('teachercourseaccessrequestrecipients_desc', 'mod_adele'),
+        \mod_adele\local\access_request::RECIPIENTS_ENROLERS,
+        [
+            \mod_adele\local\access_request::RECIPIENTS_ENROLERS =>
+                get_string('teachercourseaccessrequestrecipients_enrolers', 'mod_adele'),
+            \mod_adele\local\access_request::RECIPIENTS_ENROLREVIEW =>
+                get_string('teachercourseaccessrequestrecipients_enrolreview', 'mod_adele'),
+        ]
+    ));
+
+    $settings->add(new admin_setting_configtextarea(
+        'mod_adele/teachercourseaccessrequestfallback',
+        get_string('teachercourseaccessrequestfallback', 'mod_adele'),
+        get_string('teachercourseaccessrequestfallback_desc', 'mod_adele'),
+        '',
+        PARAM_TEXT
+    ));
 }

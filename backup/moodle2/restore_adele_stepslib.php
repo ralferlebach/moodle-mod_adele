@@ -61,6 +61,11 @@ class restore_adele_activity_structure_step extends restore_activity_structure_s
         ) {
             $data->teachercourseaccessmode = \mod_adele\local\teacher_access_mode::EXISTING_ONLY;
         }
+        // The host enrolment mode travels too (mod_adele #41); an older backup
+        // has none and gets the column's default, visible.
+        if (isset($data->hostenrolmentmode) && !in_array($data->hostenrolmentmode, ['visible', 'hidden', 'none'], true)) {
+            $data->hostenrolmentmode = 'visible';
+        }
         $newitemid = $DB->insert_record('adele', $data);
         $this->apply_activity_instance($newitemid);
     }
