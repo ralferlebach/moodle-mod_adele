@@ -45,8 +45,10 @@ use mod_adele\local\teacher_enrolment;
  * @covers     \mod_adele\external\enrol_in_node_course
  * @covers     \enrol_adele\local\teacher_grants
  * @covers     \enrol_adele\privacy\provider
+ * @covers     \mod_adele\privacy\provider
  * @covers     ::adele_update_instance
  * @covers     ::adele_delete_instance
+ * @group      adele_release
  */
 final class teacher_enrolment_test extends advanced_testcase {
     /** @var \stdClass[] Courses: A, B, host1, host2, outside. */
@@ -449,5 +451,64 @@ final class teacher_enrolment_test extends advanced_testcase {
         ));
         $this->assertSame([], $this->granted('B', 'tutor'));
         $this->assertSame([], teacher_grants::get(['userid' => $this->people['tutor']->id]));
+    }
+
+    /**
+     * Privacy of mod_adele: the person who chose the mode (policy 3) is
+     * found, exported and anonymised; the mode then has no authority, the
+     * teacher's enrolment it gave goes at once, and saving again with
+     * authority re-delegates (mod_adele #33, decision 2026-10-17).
+     */
+    public function test_privacy_of_the_grantor(): void {
+        global $DB;
+        set_config('teachercourseaccesspolicy', mode::POLICY_DELEGATE, 'mod_adele');
+        $this->setUser($this->people['editor']);
+        $this->save_mode(1, mode::ENROL_TEACHER);
+        $this->setUser($this->people['tutor']);
+        enrol_in_node_course::execute($this->ctx(1), (int) $this->courses['B']->id);
+        $this->assertSame(['teacher'], $this->granted('B', 'tutor'));
+        $this->setAdminUser();
+
+        $provider = \mod_adele\privacy\provider::class;
+        $tables = array_map(
+            fn($item) => $item->get_name(),
+            $provider::get_metadata(new \core_privacy\local\metadata\collection('mod_adele'))->get_collection()
+        );
+        $this->assertSame(['adele'], $tables);
+        $context = context_module::instance($this->activities[1]->cmid);
+        $this->assertSame(
+            [(int) $context->id],
+            array_map('intval', $provider::get_contexts_for_userid((int) $this->people['editor']->id)->get_contextids())
+        );
+        $this->assertSame([], $provider::get_contexts_for_userid((int) $this->people['tutor']->id)->get_contextids());
+        $list = new \core_privacy\local\request\userlist($context, 'mod_adele');
+        $provider::get_users_in_context($list);
+        $this->assertSame([(int) $this->people['editor']->id], array_map('intval', $list->get_userids()));
+
+        \core_privacy\local\request\writer::reset();
+        $provider::export_user_data(new \core_privacy\local\request\approved_contextlist(
+            $this->people['editor'],
+            'mod_adele',
+            [$context->id]
+        ));
+        $data = \core_privacy\local\request\writer::with_context($context)->get_data(
+            [get_string('privacy:metadata:adele', 'mod_adele')]
+        );
+        $this->assertSame(mode::ENROL_TEACHER, $data->teachercourseaccessmode);
+
+        $provider::delete_data_for_user(new \core_privacy\local\request\approved_contextlist(
+            $this->people['editor'],
+            'mod_adele',
+            [$context->id]
+        ));
+        $this->assertSame([mode::ENROL_TEACHER, 0], $this->stored(1), 'The mode stays, the grantor is anonymised.');
+        $this->assertSame([], $this->granted('B', 'tutor'), 'No authority left: the enrolment goes at once.');
+        $this->assertTrue($DB->record_exists('adele', ['id' => $this->activities[1]->id]));
+
+        $this->setUser($this->people['editor']);
+        $this->save_mode(1, mode::ENROL_TEACHER);
+        $this->setUser($this->people['tutor']);
+        enrol_in_node_course::execute($this->ctx(1), (int) $this->courses['B']->id);
+        $this->assertSame(['teacher'], $this->granted('B', 'tutor'), 'Saved again with authority: delegated again.');
     }
 }

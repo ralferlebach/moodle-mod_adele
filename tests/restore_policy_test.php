@@ -47,6 +47,7 @@ require_once($CFG->dirroot . '/backup/util/includes/restore_includes.php');
  * @covers     \backup_adele_activity_structure_step
  * @covers     \restore_adele_activity_structure_step
  * @covers     \enrol_adele_plugin::restore_instance
+ * @group      adele_release
  */
 final class restore_policy_test extends advanced_testcase {
     /** @var \stdClass The source course. */
@@ -107,9 +108,10 @@ final class restore_policy_test extends advanced_testcase {
      *
      * @param bool $users With user data.
      * @param bool $othersite Change the site identifier of the backup.
+     * @param bool $samecourse Restore into the source course itself (adding).
      * @return \stdClass The restored adele record.
      */
-    private function roundtrip(bool $users, bool $othersite = false): \stdClass {
+    private function roundtrip(bool $users, bool $othersite = false, bool $samecourse = false): \stdClass {
         global $CFG, $DB, $USER;
         // The restore reports on the console (calendar refresh); not test output.
         ob_start();
@@ -143,7 +145,7 @@ final class restore_policy_test extends advanced_testcase {
             );
             file_put_contents($xml, $content);
         }
-        $target = $this->getDataGenerator()->create_course();
+        $target = $samecourse ? $this->course : $this->getDataGenerator()->create_course();
         $rc = new \restore_controller(
             $backupid,
             $target->id,
@@ -160,7 +162,11 @@ final class restore_policy_test extends advanced_testcase {
         $rc->destroy();
         $this->runAdhocTasks();
         ob_end_clean();
-        return $DB->get_record('adele', ['course' => $target->id], '*', MUST_EXIST);
+        return $DB->get_record_sql(
+            "SELECT * FROM {adele} WHERE course = :c ORDER BY id DESC",
+            ['c' => $target->id],
+            IGNORE_MULTIPLE
+        );
     }
 
     /**
@@ -228,5 +234,39 @@ final class restore_policy_test extends advanced_testcase {
         $this->assertSame(ENROL_USER_SUSPENDED, (int) reset($adele)->status, 'Hidden, as the restored mode says.');
         $this->assertFalse(is_enrolled($target, $this->learner, '', true), 'No access in "hidden".');
         $this->assertSame($paths, $DB->count_records('local_adele_path_user'), 'No learner path record copied or added.');
+    }
+
+    /**
+     * Into the same course (adding): a second activity with the same path;
+     * the host index knows the course once, the learner keeps exactly one
+     * host enrolment, their subscription is not duplicated.
+     */
+    public function test_into_the_same_course(): void {
+        global $DB;
+        $after = $this->roundtrip(false, false, true);
+        $this->assertNotEquals((int) $this->activity->id, (int) $after->id, 'A second activity.');
+        $this->assertSame($this->lpid, (int) $after->learningpathid);
+        $this->assertSame(2, $DB->count_records('adele', ['course' => $this->course->id]));
+        $embedded = \local_adele\enrol_state::get_learningpaths_embedded_in_course((int) $this->course->id);
+        $this->assertSame([$this->lpid], array_map('intval', array_values($embedded)));
+        $this->assertSame(1, $DB->count_records_sql(
+            "SELECT COUNT(1) FROM {user_enrolments} ue JOIN {enrol} e ON e.id = ue.enrolid
+              WHERE e.courseid = :c AND e.enrol = 'adele' AND ue.userid = :u",
+            ['c' => $this->course->id, 'u' => $this->learner->id]
+        ));
+        $this->assertSame(1, $DB->count_records('local_adele_path_user', [
+            'user_id' => $this->learner->id, 'learning_path_id' => $this->lpid,
+        ]));
+    }
+
+    /**
+     * Into another course: the host index names the new course for the path.
+     */
+    public function test_the_host_index_knows_the_new_course(): void {
+        $after = $this->roundtrip(false);
+        $this->assertContains(
+            $this->lpid,
+            array_map('intval', \local_adele\enrol_state::get_learningpaths_embedded_in_course((int) $after->course))
+        );
     }
 }

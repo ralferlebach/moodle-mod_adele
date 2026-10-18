@@ -40,6 +40,7 @@ require_once($CFG->dirroot . '/backup/util/includes/restore_includes.php');
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  * @covers     \backup_adele_activity_structure_step
  * @covers     \restore_adele_activity_structure_step
+ * @group      adele_release
  */
 final class backup_hostenrolmentmode_test extends advanced_testcase {
     /**

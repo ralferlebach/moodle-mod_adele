@@ -272,3 +272,54 @@ export function onPath(username: string, pathid: string): boolean {
   '--', username, pathid], { cwd: fixture('ADELE_MOODLE_ROOT'), encoding: 'utf8' });
   return out.trim().endsWith('yes');
 }
+
+/** enrol_adele's nightly sweep, run now. */
+export function nightlySweep(): void {
+  execFileSync('php', ['-d', 'max_input_vars=5000', 'admin/cli/scheduled_task.php',
+    '--execute=\\enrol_adele\\task\\reconcile_task'], { cwd: fixture('ADELE_MOODLE_ROOT'), encoding: 'utf8' });
+}
+
+/**
+ * As administrator: enrol somebody as a student, on Moodle's participants page.
+ *
+ * @param page The page, logged in as administrator.
+ * @param courseid The course.
+ * @param name The person's full name.
+ */
+export async function enrolAsStudent(page: Page, courseid: string, name: string): Promise<void> {
+  await page.goto(`/user/index.php?id=${courseid}`);
+  await page.getByRole('button', { name: /Enrol users|Nutzer.*einschreiben/i }).first().click();
+  const picker = page.getByRole('combobox', { name: /Select users|Nutzer.*auswählen/i }).first();
+  await picker.fill(name);
+  await page.getByRole('option', { name: new RegExp(name) }).first().click();
+  await page.getByRole('combobox', { name: /Assign role|Rolle zuweisen/i }).selectOption({ label: 'Student' });
+  await page.getByRole('button', { name: /^Enrol users|Nutzer einschreiben$/i }).last().click();
+  await page.waitForLoadState('networkidle');
+}
+
+/**
+ * As administrator: end ONE enrolment method of somebody in a course - the
+ * one named - on Moodle's participants page.
+ *
+ * @param page The page.
+ * @param courseid The course.
+ * @param name The person's full name.
+ * @param method The method's name as the page shows it, e.g. "Manual enrolments".
+ */
+export async function unenrolMethod(page: Page, courseid: string, name: string, method: RegExp): Promise<void> {
+  await page.goto(`/user/index.php?id=${courseid}&perpage=5000`);
+  const row = page.locator('table#participants tbody tr').filter({ hasText: name });
+  await expect(row).toHaveCount(1, { timeout: 30_000 });
+  await page.waitForLoadState('networkidle');
+  const field = row.locator('[data-enrolinstancename]').filter({
+    has: page.locator('a[data-action="unenrol"]'),
+  });
+  const names = await field.evaluateAll((els) => els.map((el) => el.getAttribute('data-enrolinstancename') || ''));
+  const index = names.findIndex((n) => method.test(n));
+  expect(index, `a method matching ${method} among ${names.join(', ')}`).toBeGreaterThanOrEqual(0);
+  await field.nth(index).locator('a[data-action="unenrol"]').click();
+  const dialog = page.locator('.modal.show');
+  await expect(dialog).toBeVisible({ timeout: 15_000 });
+  await dialog.getByRole('button', { name: /^(Unenrol|Abmelden)$/ }).click();
+  await page.waitForLoadState('networkidle');
+}
