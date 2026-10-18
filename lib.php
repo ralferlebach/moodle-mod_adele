@@ -70,6 +70,13 @@ function adele_add_instance($moduleinstance, $mform = null) {
     $moduleinstance->completionlearningpathfinished =
         isset($moduleinstance->completionlearningpathfinished) ? $moduleinstance->completionlearningpathfinished : 0;
 
+    // A new activity starts with the site's default teacher access mode; a
+    // submitted mode counts only if the site allows it (issue local_adele #600).
+    $submitted = $moduleinstance->teachercourseaccessmode ?? null;
+    $moduleinstance->teachercourseaccessmode = \mod_adele\local\teacher_access_mode::may_save($submitted, null)
+        ? $submitted
+        : \mod_adele\local\teacher_access_mode::site_default();
+
     $id = $DB->insert_record('adele', $moduleinstance);
 
     adele_queue_host_reconcile(
@@ -100,7 +107,20 @@ function adele_update_instance($moduleinstance, $mform = null) {
     // an activity moved from learning path A to B leaves A behind entirely:
     // nothing afterwards knows that A was ever embedded here, so nobody
     // revokes the access A granted (issue #8).
-    $previous = $DB->get_record('adele', ['id' => $moduleinstance->id], 'id, course, learningpathid');
+    $previous = $DB->get_record('adele', ['id' => $moduleinstance->id], 'id, course, learningpathid, teachercourseaccessmode');
+
+    // The teacher access mode changes only to a mode the site allows; the
+    // stored one may stay as it is even when the site no longer allows it
+    // (it then acts as existing_only). Anything else leaves it untouched.
+    if (
+        property_exists($moduleinstance, 'teachercourseaccessmode')
+        && !\mod_adele\local\teacher_access_mode::may_save(
+            $moduleinstance->teachercourseaccessmode,
+            $previous ? (string) $previous->teachercourseaccessmode : null
+        )
+    ) {
+        unset($moduleinstance->teachercourseaccessmode);
+    }
 
     // Same defensive fix as adele_add_instance() above.
     $moduleinstance->participantslist = is_array($moduleinstance->participantslist)

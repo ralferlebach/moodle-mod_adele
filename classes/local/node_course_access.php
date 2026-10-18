@@ -29,8 +29,9 @@ use moodle_url;
  * view without one (administrators, managers), guest access. A course the
  * person cannot open gets no link.
  *
- * TP1 of the issue "Kurszugriff in der Lehrendenansicht": the only mode is
- * existing_only - nobody is enrolled and nothing is requested here.
+ * Whatever the activity's teacher access mode (teacher_access_mode), a
+ * course that is open gets its link; the mode only decides what happens
+ * without access. Nobody is enrolled and nothing is requested here.
  *
  * @package    mod_adele
  * @copyright  2026 Wunderbyte GmbH
@@ -38,9 +39,6 @@ use moodle_url;
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 class node_course_access {
-    /** @var string Only courses the person can already open get a link. */
-    public const MODE_EXISTING_ONLY = 'existing_only';
-
     /** @var string The person can open the course. */
     public const STATUS_OPEN = 'open';
 

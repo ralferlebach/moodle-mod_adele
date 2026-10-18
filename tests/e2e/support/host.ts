@@ -229,14 +229,18 @@ export async function editEmbedding(page: Page, cmid: string, change: EmbeddingC
  *
  * @param cmid The embedding's course module id.
  */
-export function storedEmbedding(cmid: string): { participantslist: string; hostenrolmentmode: string; userlist: number } {
+export function storedEmbedding(cmid: string): {
+  participantslist: string; hostenrolmentmode: string; userlist: number; teachercourseaccessmode: string;
+} {
   const out = execFileSync('php', ['-r', `
     define('CLI_SCRIPT', true);
     require('config.php');
     $cm = get_coursemodule_from_id('adele', (int) $argv[1], 0, false, MUST_EXIST);
-    $row = $DB->get_record('adele', ['id' => $cm->instance], 'participantslist, hostenrolmentmode, userlist', MUST_EXIST);
+    $row = $DB->get_record('adele', ['id' => $cm->instance],
+      'participantslist, hostenrolmentmode, userlist, teachercourseaccessmode', MUST_EXIST);
     echo json_encode(['participantslist' => (string) $row->participantslist,
-      'hostenrolmentmode' => (string) $row->hostenrolmentmode, 'userlist' => (int) $row->userlist]);`,
+      'hostenrolmentmode' => (string) $row->hostenrolmentmode, 'userlist' => (int) $row->userlist,
+      'teachercourseaccessmode' => (string) $row->teachercourseaccessmode]);`,
   '--', cmid], { cwd: fixture('ADELE_MOODLE_ROOT'), encoding: 'utf8' });
   return JSON.parse(out.trim().split('\n').pop() || '{}');
 }

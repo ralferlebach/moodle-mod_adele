@@ -90,5 +90,28 @@ function xmldb_adele_upgrade($oldversion) {
         upgrade_mod_savepoint(true, 2026072301, 'adele');
     }
 
+    if ($oldversion < 2026100730) {
+        // How teachers reach the node courses they cannot open yet (issue
+        // local_adele #600). Every existing activity starts with the least
+        // privileged mode, existing_only - no migration grants more.
+        $table = new xmldb_table('adele');
+        $field = new xmldb_field(
+            'teachercourseaccessmode',
+            XMLDB_TYPE_CHAR,
+            '32',
+            null,
+            XMLDB_NOTNULL,
+            null,
+            'existing_only',
+            'hostenrolmentmode'
+        );
+
+        if (!$dbman->field_exists($table, $field)) {
+            $dbman->add_field($table, $field);
+        }
+
+        upgrade_mod_savepoint(true, 2026100730, 'adele');
+    }
+
     return true;
 }

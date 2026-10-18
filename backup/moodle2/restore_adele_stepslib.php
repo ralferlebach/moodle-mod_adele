@@ -51,6 +51,16 @@ class restore_adele_activity_structure_step extends restore_activity_structure_s
 
         $data = (object)$data;
         $data->course = $this->get_courseid();
+        // The teacher access mode travels with the activity; an older backup
+        // has none (the column's default, existing_only, applies), and a value
+        // that is no mode becomes existing_only. Whether a mode acts is the
+        // site's decision on this site (teacher_access_mode::effective()).
+        if (
+            isset($data->teachercourseaccessmode)
+            && !\mod_adele\local\teacher_access_mode::is_mode($data->teachercourseaccessmode)
+        ) {
+            $data->teachercourseaccessmode = \mod_adele\local\teacher_access_mode::EXISTING_ONLY;
+        }
         $newitemid = $DB->insert_record('adele', $data);
         $this->apply_activity_instance($newitemid);
     }

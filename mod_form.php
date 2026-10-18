@@ -24,6 +24,7 @@
  */
 
 use local_adele\learning_paths;
+use mod_adele\local\teacher_access_mode;
 
 defined('MOODLE_INTERNAL') || die();
 
@@ -169,6 +170,37 @@ class mod_adele_mod_form extends moodleform_mod {
             [['2', '3']]
         );
 
+        // Under "More options" of this section (Moodle's "Show more ..."): how
+        // teachers reach the node courses they cannot open yet (issue
+        // local_adele #600). Offered are the modes the site allows - and the
+        // activity's own stored mode, if the site no longer allows it, so that
+        // saving the form for another reason does not change it silently.
+        $stored = $this->stored_teachercourseaccessmode();
+        $mform->addElement(
+            'select',
+            'teachercourseaccessmode',
+            get_string('teachercourseaccessmode', 'mod_adele'),
+            teacher_access_mode::form_options($stored)
+        );
+        $mform->addHelpButton('teachercourseaccessmode', 'teachercourseaccessmode', 'mod_adele');
+        $mform->setType('teachercourseaccessmode', PARAM_ALPHAEXT);
+        $mform->setDefault('teachercourseaccessmode', $stored ?? teacher_access_mode::site_default());
+        if ($stored !== null && !teacher_access_mode::is_allowed($stored)) {
+            // Not tucked away: whoever edits the activity is to see it.
+            $mform->addElement(
+                'static',
+                'teachercourseaccessmode_notallowed_hint',
+                '',
+                \html_writer::div(
+                    get_string('teachercourseaccessmode_notallowed_hint', 'mod_adele'),
+                    'alert alert-warning mb-0',
+                    ['data-testid' => 'teachercourseaccessmode-notallowed']
+                )
+            );
+        } else {
+            $mform->setAdvanced('teachercourseaccessmode');
+        }
+
         $this->standard_coursemodule_elements();
         $this->add_action_buttons();
     }
@@ -190,7 +222,30 @@ class mod_adele_mod_form extends moodleform_mod {
             $errors['participantslist'] = get_string('mform_options_required', 'mod_adele');
         }
 
+        // The server decides, not the browser: only an allowed mode, or the
+        // stored one unchanged (issue local_adele #600).
+        if (
+            isset($data['teachercourseaccessmode'])
+            && !teacher_access_mode::may_save($data['teachercourseaccessmode'], $this->stored_teachercourseaccessmode())
+        ) {
+            $errors['teachercourseaccessmode'] = get_string('teachercourseaccessmode_refused', 'mod_adele');
+        }
+
         return $errors;
+    }
+
+    /**
+     * The teacher access mode the activity has stored - null for a new one.
+     *
+     * @return string|null
+     */
+    private function stored_teachercourseaccessmode(): ?string {
+        global $DB;
+        if (empty($this->_instance)) {
+            return null;
+        }
+        $stored = $DB->get_field('adele', 'teachercourseaccessmode', ['id' => $this->_instance]);
+        return $stored === false ? null : (string) $stored;
     }
 
     /**

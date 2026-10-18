@@ -54,10 +54,9 @@ final class node_course_access_test extends advanced_testcase {
      * A path: node 1 = A, node 2 = stack (B, C), node 3 = a deleted course,
      * node 4 = D (hidden). Embedded in a host course.
      *
-     * @param bool $withdeleted Whether node 3 points at a deleted course.
      * @return void
      */
-    private function plant(bool $withdeleted = true): void {
+    private function plant(): void {
         global $DB;
         foreach (['A', 'B', 'C'] as $key) {
             $this->courses[$key] = $this->getDataGenerator()->create_course([
@@ -79,7 +78,7 @@ final class node_course_access_test extends advanced_testcase {
             ['id' => 'dndnode_2', 'type' => 'orcourses', 'parentCourse' => ['dndnode_1'],
                 'data' => ['course_node_id' => [(int) $this->courses['C']->id, (int) $this->courses['B']->id]]],
             ['id' => 'dndnode_3', 'type' => 'custom', 'parentCourse' => ['dndnode_2'],
-                'data' => ['course_node_id' => $withdeleted ? [$goneid] : []]],
+                'data' => ['course_node_id' => [$goneid]]],
             ['id' => 'dndnode_4', 'type' => 'custom', 'parentCourse' => ['dndnode_3'],
                 'data' => ['course_node_id' => [(int) $this->courses['D']->id, SITEID]]],
         ];
@@ -95,11 +94,9 @@ final class node_course_access_test extends advanced_testcase {
         $this->adele = $this->getDataGenerator()->create_module('adele', [
             'course' => $this->host->id,
             'learningpathid' => $lpid,
-            // Participant source "starting node": no node of the test path is one, so enrolling
-            // people in the host course subscribes nobody. With "this course" the
-            // subscription's evaluation trips over the deleted node course -
-            // a separate finding (issue draft local_adele-issue-deleted-node-course).
-            'participantslist' => [2],
+            // Participant source "this course": enrolling a learner subscribes
+            // them; the deleted node course must not get in the way (#601).
+            'participantslist' => [1],
             'hostenrolmentmode' => 'visible',
             'userlist' => 1,
             'view' => 1,
@@ -179,10 +176,7 @@ final class node_course_access_test extends advanced_testcase {
      */
     public function test_who_may_ask(): void {
         $this->resetAfterTest();
-        // Without the deleted course: enrolling an editing teacher subscribes
-        // them (local_adele), and the evaluation of a path with a deleted
-        // node course fails - a separate finding, not this test's subject.
-        $this->plant(false);
+        $this->plant();
         $cm = get_coursemodule_from_instance('adele', $this->adele->id, $this->host->id, false, MUST_EXIST);
         $contextid = context_module::instance($cm->id)->id;
 
@@ -191,7 +185,7 @@ final class node_course_access_test extends advanced_testcase {
             $this->getDataGenerator()->enrol_user($user->id, $this->host->id, $role);
             $this->setUser($user);
             $result = get_node_course_access::execute($contextid);
-            $this->assertSame(node_course_access::MODE_EXISTING_ONLY, $result['mode'], $role);
+            $this->assertSame(\mod_adele\local\teacher_access_mode::EXISTING_ONLY, $result['mode'], $role);
             $this->assertCount(4, $result['courses'], $role);
         }
 

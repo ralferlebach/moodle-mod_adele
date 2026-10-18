@@ -75,7 +75,9 @@ class get_node_course_access extends external_api {
         }
 
         return [
-            'mode' => node_course_access::MODE_EXISTING_ONLY,
+            // The mode that acts: the activity's own while the site allows it
+            // (issue local_adele #600, TP3).
+            'mode' => \mod_adele\local\teacher_access_mode::for_instance((int) $cm->instance),
             'courses' => node_course_access::for_activity($cm),
         ];
     }
