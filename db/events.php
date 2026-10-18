@@ -72,4 +72,14 @@
         'callback' => 'mod_adele_observer::learner_path_updated',
         'priority' => -100,
     ],
+    [
+        // A saved or deleted path: teachers' node course enrolments of the
+        // activities that embed it follow (local_adele #600, TP4).
+        'eventname' => '\local_adele\event\learnpath_updated',
+        'callback' => 'mod_adele_observer::learnpath_changed',
+    ],
+    [
+        'eventname' => '\local_adele\event\learnpath_deleted',
+        'callback' => 'mod_adele_observer::learnpath_changed',
+    ],
  ];

@@ -180,10 +180,16 @@ final class teacher_access_mode_test extends advanced_testcase {
         $this->assertSame(mode::REQUEST, $this->stored($activity), 'Stored as it was - no silent change.');
         $this->assertSame(mode::EXISTING_ONLY, mode::for_instance((int) $activity->id), 'But it does not act.');
 
-        $options = mode::form_options(mode::REQUEST);
+        $context = context_module::instance($activity->cmid);
+        $admin = (int) get_admin()->id;
+        $options = mode::form_options(mode::REQUEST, 0, $admin, $context);
         $this->assertSame([mode::EXISTING_ONLY, mode::REQUEST], array_keys($options));
-        $this->assertStringContainsString('no longer allowed', $options[mode::REQUEST]);
-        $this->assertSame([mode::EXISTING_ONLY], array_keys(mode::form_options(null)), 'A new activity: allowed modes only.');
+        $this->assertStringContainsString('no longer allowed', $options[mode::REQUEST]['label']);
+        $this->assertSame(
+            [mode::EXISTING_ONLY],
+            array_keys(mode::form_options(null, 0, $admin, $context)),
+            'A new activity: allowed modes only.'
+        );
 
         $this->save($activity, mode::REQUEST);
         $this->assertSame(mode::REQUEST, $this->stored($activity), 'Saved unchanged: kept.');

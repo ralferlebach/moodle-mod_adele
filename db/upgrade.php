@@ -113,5 +113,25 @@ function xmldb_adele_upgrade($oldversion) {
         upgrade_mod_savepoint(true, 2026100730, 'adele');
     }
 
+    if ($oldversion < 2026100732) {
+        // Who chose a teacher enrolment mode with the authority for it (local_adele
+        // #600, TP4). Nobody yet: no activity has such a mode before this version.
+        $table = new xmldb_table('adele');
+        $field = new xmldb_field(
+            'teachercourseaccessgrantor',
+            XMLDB_TYPE_INTEGER,
+            '10',
+            null,
+            XMLDB_NOTNULL,
+            null,
+            '0',
+            'teachercourseaccessmode'
+        );
+        if (!$dbman->field_exists($table, $field)) {
+            $dbman->add_field($table, $field);
+        }
+        upgrade_mod_savepoint(true, 2026100732, 'adele');
+    }
+
     return true;
 }

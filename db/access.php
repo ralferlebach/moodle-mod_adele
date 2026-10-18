@@ -46,4 +46,27 @@ $capabilities = [
           'user' => CAP_ALLOW,
       ],
     ],
+    // Enrol oneself into a node course from the teacher view, where the
+    // activity's mode offers it (local_adele #600, TP4).
+    'mod/adele:enrolinnodecourses' => [
+        'riskbitmask' => RISK_PERSONAL,
+        'captype' => 'write',
+        'contextlevel' => CONTEXT_MODULE,
+        'archetypes' => [
+            'editingteacher' => CAP_ALLOW,
+            'teacher' => CAP_ALLOW,
+            'manager' => CAP_ALLOW,
+        ],
+    ],
+    // Under the site policy "delegation": choose a teacher enrolment mode for
+    // an activity without rights in all of its node courses (local_adele #600).
+    'mod/adele:delegatecourseaccess' => [
+        'riskbitmask' => RISK_CONFIG | RISK_MANAGETRUST,
+        'captype' => 'write',
+        'contextlevel' => CONTEXT_MODULE,
+        'archetypes' => [
+            'editingteacher' => CAP_ALLOW,
+            'manager' => CAP_ALLOW,
+        ],
+    ],
 ];

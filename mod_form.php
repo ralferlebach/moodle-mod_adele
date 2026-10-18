@@ -175,17 +175,36 @@ class mod_adele_mod_form extends moodleform_mod {
         // local_adele #600). Offered are the modes the site allows - and the
         // activity's own stored mode, if the site no longer allows it, so that
         // saving the form for another reason does not change it silently.
+        // The teacher enrolment modes follow the site's policy (TP4): what the
+        // person editing may not choose is locked (policy 1) or not offered.
+        global $USER;
         $stored = $this->stored_teachercourseaccessmode();
-        $mform->addElement(
+        $pathid = (int) ($this->current->learningpathid ?? 0);
+        $select = $mform->createElement(
             'select',
             'teachercourseaccessmode',
-            get_string('teachercourseaccessmode', 'mod_adele'),
-            teacher_access_mode::form_options($stored)
+            get_string('teachercourseaccessmode', 'mod_adele')
         );
+        foreach (teacher_access_mode::form_options($stored, $pathid, (int) $USER->id, $this->mode_context()) as $mode => $option) {
+            $select->addOption($option['label'], $mode, $option['disabled'] ? ['disabled' => 'disabled'] : null);
+        }
+        $mform->addElement($select);
         $mform->addHelpButton('teachercourseaccessmode', 'teachercourseaccessmode', 'mod_adele');
         $mform->setType('teachercourseaccessmode', PARAM_ALPHAEXT);
         $mform->setDefault('teachercourseaccessmode', $stored ?? teacher_access_mode::site_default());
-        if ($stored !== null && !teacher_access_mode::is_allowed($stored)) {
+        if (teacher_access_mode::is_locked($stored, $pathid, (int) $USER->id, $this->mode_context())) {
+            $mform->hardFreeze('teachercourseaccessmode');
+            $mform->addElement(
+                'static',
+                'teachercourseaccessmode_locked_hint',
+                '',
+                \html_writer::div(
+                    get_string('teachercourseaccessmode_locked_hint', 'mod_adele'),
+                    'alert alert-info mb-0',
+                    ['data-testid' => 'teachercourseaccessmode-locked']
+                )
+            );
+        } else if ($stored !== null && !teacher_access_mode::is_allowed($stored)) {
             // Not tucked away: whoever edits the activity is to see it.
             $mform->addElement(
                 'static',
@@ -224,14 +243,34 @@ class mod_adele_mod_form extends moodleform_mod {
 
         // The server decides, not the browser: only an allowed mode, or the
         // stored one unchanged (issue local_adele #600).
+        global $USER;
         if (
             isset($data['teachercourseaccessmode'])
-            && !teacher_access_mode::may_save($data['teachercourseaccessmode'], $this->stored_teachercourseaccessmode())
+            && !teacher_access_mode::may_save(
+                $data['teachercourseaccessmode'],
+                $this->stored_teachercourseaccessmode(),
+                (int) ($data['learningpathid'] ?? 0),
+                (int) $USER->id,
+                $this->mode_context()
+            )
         ) {
-            $errors['teachercourseaccessmode'] = get_string('teachercourseaccessmode_refused', 'mod_adele');
+            $errors['teachercourseaccessmode'] = teacher_access_mode::is_allowed((string) $data['teachercourseaccessmode'])
+                ? get_string('teachercourseaccessmode_noauthority', 'mod_adele')
+                : get_string('teachercourseaccessmode_refused', 'mod_adele');
         }
 
         return $errors;
+    }
+
+    /**
+     * The context the authority for a teacher mode is checked in: the
+     * activity's, or the course's for a new activity.
+     *
+     * @return \context
+     */
+    private function mode_context(): \context {
+        $cm = $this->get_coursemodule();
+        return $cm ? \context_module::instance($cm->id) : \context_course::instance($this->get_course()->id);
     }
 
     /**

@@ -42,13 +42,15 @@ if ($ADMIN->fulltree) {
 
     // Existing access only is always allowed (teacher_access_mode::allowed()),
     // whether ticked here or not; out of the box it is the only mode.
-    $settings->add(new admin_setting_configmulticheckbox(
+    $setting = new admin_setting_configmulticheckbox(
         'mod_adele/teachercourseaccessmodes',
         get_string('teachercourseaccessmodes', 'mod_adele'),
         get_string('teachercourseaccessmodes_desc', 'mod_adele'),
         [teacher_access_mode::EXISTING_ONLY => 1],
         $modes
-    ));
+    );
+    $setting->set_updatedcallback('mod_adele\\local\\teacher_enrolment::settings_changed');
+    $settings->add($setting);
 
     $settings->add(new admin_setting_configselect(
         'mod_adele/teachercourseaccessdefault',
@@ -57,6 +59,37 @@ if ($ADMIN->fulltree) {
         teacher_access_mode::EXISTING_ONLY,
         $modes
     ));
+
+    // The teacher enrolment modes (TP4): who may choose them, and which role
+    // each enrolment mode gives. A change takes away what no longer holds.
+    $setting = new admin_setting_configselect(
+        'mod_adele/teachercourseaccesspolicy',
+        get_string('teachercourseaccesspolicy', 'mod_adele'),
+        get_string('teachercourseaccesspolicy_desc', 'mod_adele'),
+        teacher_access_mode::POLICY_KEEP,
+        [
+            teacher_access_mode::POLICY_LOCKED => get_string('teachercourseaccesspolicy_1', 'mod_adele'),
+            teacher_access_mode::POLICY_KEEP => get_string('teachercourseaccesspolicy_2', 'mod_adele'),
+            teacher_access_mode::POLICY_DELEGATE => get_string('teachercourseaccesspolicy_3', 'mod_adele'),
+        ]
+    );
+    $setting->set_updatedcallback('mod_adele\\local\\teacher_enrolment::settings_changed');
+    $settings->add($setting);
+
+    $roles = role_fix_names(get_all_roles(), context_system::instance(), ROLENAME_ORIGINAL, true);
+    foreach (teacher_access_mode::ROLE_ARCHETYPES as $mode => $archetype) {
+        $default = get_archetype_roles($archetype);
+        $default = reset($default);
+        $setting = new admin_setting_configselect(
+            'mod_adele/teachercourseaccessrole_' . $mode,
+            get_string('teachercourseaccessrole', 'mod_adele', $modes[$mode]),
+            get_string('teachercourseaccessrole_desc', 'mod_adele'),
+            $default ? (int) $default->id : 0,
+            $roles
+        );
+        $setting->set_updatedcallback('mod_adele\\local\\teacher_enrolment::settings_changed');
+        $settings->add($setting);
+    }
 
     // For "Request access" (TP2): whom a teacher may ask, and what to tell them
     // when the course has nobody to ask.

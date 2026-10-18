@@ -446,4 +446,19 @@ class mod_adele_observer {
         }
         \local_adele\enrol_state::warn_enrol_adele_missing();
     }
+
+    /**
+     * A learning path was saved or deleted: the teachers' node course
+     * enrolments of the activities embedding it that no longer hold go
+     * (local_adele #600, TP4).
+     *
+     * @param \core\event\base $event learnpath_updated or learnpath_deleted.
+     * @return void
+     */
+    public static function learnpath_changed(\core\event\base $event): void {
+        $learningpathid = (int) ($event->other['learningpathid'] ?? $event->objectid);
+        if ($learningpathid) {
+            \mod_adele\local\teacher_enrolment::reconcile_path($learningpathid);
+        }
+    }
 }

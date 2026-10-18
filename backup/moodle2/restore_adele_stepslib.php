@@ -66,6 +66,12 @@ class restore_adele_activity_structure_step extends restore_activity_structure_s
         if (isset($data->hostenrolmentmode) && !in_array($data->hostenrolmentmode, ['visible', 'hidden', 'none'], true)) {
             $data->hostenrolmentmode = 'visible';
         }
+        // The grantor of a teacher mode is a person of this site only if the
+        // restore maps them; otherwise nobody, and the mode gives no
+        // enrolments until somebody with authority saves it (local_adele #600).
+        $data->teachercourseaccessgrantor = empty($data->teachercourseaccessgrantor)
+            ? 0
+            : (int) $this->get_mappingid('user', $data->teachercourseaccessgrantor, 0);
         $newitemid = $DB->insert_record('adele', $data);
         $this->apply_activity_instance($newitemid);
     }

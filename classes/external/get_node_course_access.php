@@ -69,6 +69,14 @@ class get_node_course_access extends external_api {
             // (issue local_adele #600, TP3).
             'mode' => \mod_adele\local\teacher_access_mode::for_instance((int) $cm->instance),
             'courses' => node_course_access::for_activity($cm),
+            'source' => get_string('enrol_source', 'mod_adele', (object) [
+                'activity' => format_string($cm->name, true, ['context' => \context_module::instance($cm->id)]),
+                'course' => format_string(
+                    get_course($cm->course)->fullname,
+                    true,
+                    ['context' => \context_course::instance($cm->course)]
+                ),
+            ]),
         ];
     }
 
@@ -103,6 +111,7 @@ class get_node_course_access extends external_api {
     public static function execute_returns(): external_single_structure {
         return new external_single_structure([
             'mode' => new external_value(PARAM_ALPHANUMEXT, 'Effective access mode of the activity'),
+            'source' => new external_value(PARAM_TEXT, 'The activity and its course, as the source of an enrolment'),
             'courses' => new external_multiple_structure(new external_single_structure([
                 'courseid' => new external_value(PARAM_INT, 'Course id'),
                 'shortname' => new external_value(PARAM_TEXT, 'Short name, formatted'),
@@ -115,6 +124,9 @@ class get_node_course_access extends external_api {
                     'open: the person can open the course; none: not; request: may ask; request_copy: nobody to ask'
                 ),
                 'url' => new external_value(PARAM_URL, 'The course, only when it is open to the person', VALUE_OPTIONAL),
+                'role' => new external_value(PARAM_TEXT, 'Status enrol: the role the enrolment gives', VALUE_OPTIONAL),
+                'roledescription' => new external_value(PARAM_RAW, 'Status enrol: what the role may do (HTML)', VALUE_OPTIONAL),
+                'reason' => new external_value(PARAM_TEXT, 'Status unavailable: why not', VALUE_OPTIONAL),
             ])),
         ]);
     }

@@ -36,11 +36,12 @@ class backup_adele_activity_structure_step extends backup_activity_structure_ste
         $adele = new backup_nested_element('adele', ['id'], [
             'course', 'name', 'learningpathid', 'view', 'userlist',
             'participantslist', 'timecreated', 'timemodified', 'intro', 'introformat', 'completionlearningpathfinished',
-            'hostenrolmentmode', 'teachercourseaccessmode',
+            'hostenrolmentmode', 'teachercourseaccessmode', 'teachercourseaccessgrantor',
         ]);
 
         // Define sources.
         $adele->set_source_table('adele', ['id' => backup::VAR_ACTIVITYID]);
+        $adele->annotate_ids('user', 'teachercourseaccessgrantor');
 
         // Define file annotations (if there are files to back up).
         $adele->annotate_files('mod_adele', 'intro', null);

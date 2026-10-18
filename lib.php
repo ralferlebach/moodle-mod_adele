@@ -70,12 +70,7 @@ function adele_add_instance($moduleinstance, $mform = null) {
     $moduleinstance->completionlearningpathfinished =
         isset($moduleinstance->completionlearningpathfinished) ? $moduleinstance->completionlearningpathfinished : 0;
 
-    // A new activity starts with the site's default teacher access mode; a
-    // submitted mode counts only if the site allows it (issue local_adele #600).
-    $submitted = $moduleinstance->teachercourseaccessmode ?? null;
-    $moduleinstance->teachercourseaccessmode = \mod_adele\local\teacher_access_mode::may_save($submitted, null)
-        ? $submitted
-        : \mod_adele\local\teacher_access_mode::site_default();
+    adele_resolve_teacher_mode($moduleinstance, null, \context_course::instance((int) $moduleinstance->course));
 
     $id = $DB->insert_record('adele', $moduleinstance);
 
@@ -85,6 +80,47 @@ function adele_add_instance($moduleinstance, $mform = null) {
     );
 
     return $id;
+}
+
+/**
+ * The teacher access mode and its grantor of an activity being saved (local_adele
+ * #600): what may be saved is teacher_access_mode::may_save()'s decision for
+ * the person saving; whatever may not is left as stored. Who saves a teacher
+ * mode with the authority for it becomes its grantor; keeping or lowering it
+ * without that authority leaves the grantor as it was; any other mode has none.
+ *
+ * @param stdClass $moduleinstance The data being saved; changed in place.
+ * @param stdClass|null $previous The stored record (null: a new activity).
+ * @param \context $context Module context, or course context for a new activity.
+ * @return void
+ */
+function adele_resolve_teacher_mode(stdClass $moduleinstance, ?stdClass $previous, \context $context): void {
+    global $USER;
+    $modes = \mod_adele\local\teacher_access_mode::class;
+    $stored = $previous ? (string) $previous->teachercourseaccessmode : null;
+    $pathid = (int) ($moduleinstance->learningpathid ?? ($previous->learningpathid ?? 0));
+    $userid = (int) $USER->id;
+    unset($moduleinstance->teachercourseaccessgrantor);
+
+    if (!$previous) {
+        $submitted = $moduleinstance->teachercourseaccessmode ?? null;
+        $mode = $modes::may_save($submitted, null, $pathid, $userid, $context) ? $submitted : $modes::site_default();
+    } else if (!property_exists($moduleinstance, 'teachercourseaccessmode')) {
+        $mode = $stored;
+    } else if ($modes::may_save($moduleinstance->teachercourseaccessmode, $stored, $pathid, $userid, $context)) {
+        $mode = $moduleinstance->teachercourseaccessmode;
+    } else {
+        $mode = $stored;
+    }
+    $moduleinstance->teachercourseaccessmode = $mode;
+
+    if (!$modes::is_teacher_mode($mode)) {
+        $moduleinstance->teachercourseaccessgrantor = 0;
+    } else if ($modes::may_configure($mode, $pathid, $userid, $context)) {
+        $moduleinstance->teachercourseaccessgrantor = $userid;
+    } else if (!$previous) {
+        $moduleinstance->teachercourseaccessgrantor = 0;
+    }
 }
 
 /**
@@ -107,19 +143,15 @@ function adele_update_instance($moduleinstance, $mform = null) {
     // an activity moved from learning path A to B leaves A behind entirely:
     // nothing afterwards knows that A was ever embedded here, so nobody
     // revokes the access A granted (issue #8).
-    $previous = $DB->get_record('adele', ['id' => $moduleinstance->id], 'id, course, learningpathid, teachercourseaccessmode');
-
-    // The teacher access mode changes only to a mode the site allows; the
-    // stored one may stay as it is even when the site no longer allows it
-    // (it then acts as existing_only). Anything else leaves it untouched.
-    if (
-        property_exists($moduleinstance, 'teachercourseaccessmode')
-        && !\mod_adele\local\teacher_access_mode::may_save(
-            $moduleinstance->teachercourseaccessmode,
-            $previous ? (string) $previous->teachercourseaccessmode : null
-        )
-    ) {
-        unset($moduleinstance->teachercourseaccessmode);
+    $previous = $DB->get_record(
+        'adele',
+        ['id' => $moduleinstance->id],
+        'id, course, learningpathid, teachercourseaccessmode, teachercourseaccessgrantor'
+    );
+    if ($previous && !empty($moduleinstance->coursemodule)) {
+        adele_resolve_teacher_mode($moduleinstance, $previous, \context_module::instance((int) $moduleinstance->coursemodule));
+    } else {
+        unset($moduleinstance->teachercourseaccessmode, $moduleinstance->teachercourseaccessgrantor);
     }
 
     // Same defensive fix as adele_add_instance() above.
@@ -131,6 +163,12 @@ function adele_update_instance($moduleinstance, $mform = null) {
         isset($moduleinstance->completionlearningpathfinished) ? $moduleinstance->completionlearningpathfinished : 0;
 
     $result = $DB->update_record('adele', $moduleinstance);
+
+    // Teachers' node course enrolments of this activity follow its settings:
+    // a lowered or changed mode, another path (local_adele #600, TP4).
+    if (!empty($moduleinstance->coursemodule)) {
+        \mod_adele\local\teacher_enrolment::reconcile_cm((int) $moduleinstance->coursemodule);
+    }
 
     // The course property is not guaranteed to be present on every code
     // path that reaches an update (some callers build a partial object), so
@@ -164,6 +202,13 @@ function adele_delete_instance($id) {
     $exists = $DB->get_record('adele', ['id' => $id]);
     if (!$exists) {
         return false;
+    }
+
+    // Deleted is gone: the teachers' node course enrolments this activity gave
+    // go with it - and only those (local_adele #600, TP4).
+    $cm = get_coursemodule_from_instance('adele', $id);
+    if ($cm) {
+        \mod_adele\local\teacher_enrolment::remove_cm((int) $cm->id);
     }
 
     $DB->delete_records('adele', ['id' => $id]);

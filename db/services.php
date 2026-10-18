@@ -51,4 +51,12 @@ $functions = [
         // Decided in the function, as for mod_adele_get_access_request, plus the recipient.
         'capabilities' => '',
     ],
+    'mod_adele_enrol_in_node_course' => [
+        'classname' => 'mod_adele\external\enrol_in_node_course',
+        'description' => 'Enrol oneself into a node course from the teacher view, as the activity\'s mode allows.',
+        'type' => 'write',
+        'ajax' => true,
+        // Decided in the function: teacher view, mod/adele:enrolinnodecourses, mode, authority, course, role.
+        'capabilities' => 'mod/adele:enrolinnodecourses',
+    ],
 ];

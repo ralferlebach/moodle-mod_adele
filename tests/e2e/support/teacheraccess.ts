@@ -173,3 +173,50 @@ export async function activateKzStack(page: Page) {
   await expect(section.locator('.adele-course-access-note[role="status"]')).toHaveCount(0, { timeout: 30_000 });
   return section;
 }
+
+/**
+ * As administrator: the site's policy for the teacher enrolment modes.
+ *
+ * @param page The page, logged in as administrator.
+ * @param policy 1, 2 or 3.
+ */
+export async function sitePolicy(page: Page, policy: 1 | 2 | 3): Promise<void> {
+  await page.goto(SETTINGS);
+  await page.locator('#id_s_mod_adele_teachercourseaccesspolicy').selectOption(String(policy));
+  await page.getByRole('button', { name: /Save changes|Änderungen speichern/ }).click();
+  await expect(page.locator('.alert-success, .alert-info').first()).toBeVisible();
+}
+
+/** A teacher grant as the server keeps it. */
+export interface Grant {
+  courseid: number;
+  mode: string;
+  role: string;
+  enrolled: boolean;
+}
+
+/**
+ * The teacher grants of a person, with the roles enrol_adele actually gave
+ * them in each course and whether the enrolment is active (read on the server).
+ *
+ * @param username The person.
+ */
+export function grantsOf(username: string): Grant[] {
+  const out = execFileSync('php', ['-r', `
+    define('CLI_SCRIPT', true);
+    require('config.php');
+    $user = $DB->get_field('user', 'id', ['username' => $argv[1]], MUST_EXIST);
+    $list = [];
+    foreach ($DB->get_records('enrol_adele_teacher_grants', ['userid' => $user], 'id ASC') as $g) {
+      $instance = $DB->get_record('enrol', ['enrol' => 'adele', 'courseid' => $g->courseid, 'customint2' => 3]);
+      $enrolled = $instance && $DB->record_exists('user_enrolments',
+        ['enrolid' => $instance->id, 'userid' => $user, 'status' => 0]);
+      $role = $instance ? $DB->get_field_sql("SELECT r.shortname FROM {role_assignments} ra JOIN {role} r ON r.id = ra.roleid
+        WHERE ra.userid = ? AND ra.component = 'enrol_adele' AND ra.itemid = ? AND ra.roleid = ?",
+        [$user, $instance->id, $g->roleid]) : '';
+      $list[] = ['courseid' => (int) $g->courseid, 'mode' => $g->mode, 'role' => (string) $role, 'enrolled' => $enrolled];
+    }
+    echo json_encode($list);`,
+  '--', username], { cwd: fixture('ADELE_MOODLE_ROOT'), encoding: 'utf8' });
+  return JSON.parse(out.trim().split('\n').pop() || '[]');
+}
