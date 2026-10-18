@@ -91,6 +91,15 @@ if ($ADMIN->fulltree) {
         $settings->add($setting);
     }
 
+    $setting = new admin_setting_configcheckbox(
+        'mod_adele/sourcesincludesuspended',
+        get_string('sourcesincludesuspended', 'mod_adele'),
+        get_string('sourcesincludesuspended_desc', 'mod_adele'),
+        0
+    );
+    $setting->set_updatedcallback('mod_adele\\local\\host_policy::sources_setting_changed');
+    $settings->add($setting);
+
     // For "Request access" (TP2): whom a teacher may ask, and what to tell them
     // when the course has nobody to ask.
     $settings->add(new admin_setting_configselect(

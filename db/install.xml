@@ -18,7 +18,7 @@
         <FIELD NAME="intro" TYPE="text" NOTNULL="false" SEQUENCE="false" COMMENT="Activity description."/>
         <FIELD NAME="introformat" TYPE="int" LENGTH="4" NOTNULL="true" DEFAULT="0" SEQUENCE="false" COMMENT="The format of the intro field."/>
         <FIELD NAME="completionlearningpathfinished" TYPE="int" LENGTH="1" NOTNULL="false" DEFAULT="0" COMMENT="Trigger activity completion when user path finished"/>
-        <FIELD NAME="hostenrolmentmode" TYPE="char" LENGTH="10" NOTNULL="true" DEFAULT="visible" SEQUENCE="false" COMMENT="Host-course enrolment visibility for participantslist options 2/3: visible, hidden or none. Ignored for option 1, which always enrols via enrol_manual regardless."/>
+        <FIELD NAME="hostenrolmentmode" TYPE="char" LENGTH="10" NOTNULL="true" DEFAULT="visible" SEQUENCE="false" COMMENT="Host-course enrolment visibility for participantslist options 2/3: visible, hidden or none. Ignored for option 1, whose people are members of this course already."/>
         <FIELD NAME="teachercourseaccessmode" TYPE="char" LENGTH="32" NOTNULL="true" DEFAULT="existing_only" SEQUENCE="false" COMMENT="How teachers reach node courses they cannot open yet: existing_only, request, enrol_student, enrol_teacher, enrol_editingteacher. Acts only while the site allows it."/>
         <FIELD NAME="teachercourseaccessgrantor" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false" COMMENT="Who chose a teacher enrolment mode with the authority for it; the mode gives enrolments only while this person still has that authority."/>
       </FIELDS>

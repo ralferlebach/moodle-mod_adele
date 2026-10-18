@@ -81,7 +81,7 @@ final class backup_hostenrolmentmode_test extends advanced_testcase {
     public function test_a_duplicate_keeps_the_mode(): void {
         $this->resetAfterTest();
         $this->setAdminUser();
-        foreach (['none', 'hidden'] as $mode) {
+        foreach (['none', 'hidden', 'visible'] as $mode) {
             $activity = $this->activity($mode);
             $cm = get_coursemodule_from_id('adele', $activity->cmid, 0, false, MUST_EXIST);
             $copy = duplicate_module(get_course($activity->course), $cm);
@@ -138,5 +138,73 @@ final class backup_hostenrolmentmode_test extends advanced_testcase {
             $restored = $DB->get_record('adele', ['course' => $target->id], 'id', MUST_EXIST);
             $this->assertSame($older ? 'visible' : 'none', $this->stored((int) $restored->id), $older ? 'older backup' : 'import');
         }
+    }
+
+    /**
+     * Restored with "none" into another course, beside an existing embedding
+     * of the same path there with "none" too: a learner whose node-course
+     * membership qualifies gets no host enrolment - no ADELE method appears
+     * in the target course.
+     *
+     * @return void
+     */
+    public function test_none_restored_beside_an_existing_embedding_enrols_nobody(): void {
+        global $DB, $USER;
+        $this->resetAfterTest();
+        $this->setAdminUser();
+        $node = $this->getDataGenerator()->create_course();
+        $nodes = [['id' => 'dndnode_1', 'type' => 'custom', 'parentCourse' => ['starting_node'],
+            'data' => ['course_node_id' => [(int) $node->id]]]];
+        $lpid = (int) $DB->insert_record('local_adele_learning_paths', (object) [
+            'name' => 'P',
+            'json' => json_encode(['tree' => ['nodes' => $nodes, 'edges' => []]]),
+            'visibility' => 1,
+            'createdby' => 2,
+        ]);
+        $source = $this->getDataGenerator()->create_course();
+        $activity = $this->getDataGenerator()->create_module('adele', [
+            'course' => $source->id, 'learningpathid' => $lpid, 'participantslist' => [2], 'hostenrolmentmode' => 'none',
+        ]);
+        $target = $this->getDataGenerator()->create_course();
+        $this->getDataGenerator()->create_module('adele', [
+            'course' => $target->id, 'learningpathid' => $lpid, 'participantslist' => [2], 'hostenrolmentmode' => 'none',
+        ]);
+        $learner = $this->getDataGenerator()->create_user();
+        $this->getDataGenerator()->enrol_user($learner->id, $node->id, 'student');
+        $this->runAdhocTasks();
+
+        $bc = new \backup_controller(
+            \backup::TYPE_1ACTIVITY,
+            $activity->cmid,
+            \backup::FORMAT_MOODLE,
+            \backup::INTERACTIVE_NO,
+            \backup::MODE_IMPORT,
+            $USER->id
+        );
+        $backupid = $bc->get_backupid();
+        $bc->execute_plan();
+        $bc->destroy();
+        ob_start();
+        $rc = new \restore_controller(
+            $backupid,
+            $target->id,
+            \backup::INTERACTIVE_NO,
+            \backup::MODE_IMPORT,
+            $USER->id,
+            \backup::TARGET_EXISTING_ADDING
+        );
+        $rc->execute_precheck();
+        $rc->execute_plan();
+        $rc->destroy();
+        $this->runAdhocTasks();
+        ob_end_clean();
+
+        $this->assertSame(2, $DB->count_records('adele', ['course' => $target->id]), 'Two embeddings now.');
+        $this->assertFalse($DB->record_exists('enrol', ['courseid' => $target->id, 'enrol' => 'adele']), 'No ADELE method.');
+        $this->assertFalse(is_enrolled(\context_course::instance($target->id), $learner), 'Nobody enrolled.');
+        $this->assertTrue(
+            $DB->record_exists('local_adele_path_user', ['user_id' => $learner->id, 'learning_path_id' => $lpid]),
+            'The subscription is the path\'s, not the host course\'s.'
+        );
     }
 }

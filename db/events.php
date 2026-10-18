@@ -40,6 +40,12 @@
         'callback' => 'mod_adele_observer::user_enrolment_created',
     ],
     [
+        // A suspended enrolment carries nothing; suspending or reactivating
+        // it changes the sources like an enrolment does (mod_adele #30).
+        'eventname' => '\core\event\user_enrolment_updated',
+        'callback' => 'mod_adele_observer::user_enrolment_updated',
+    ],
+    [
         // Live counterpart to the enrolment case above: losing membership in
         // a node course must revoke host-course access the same way gaining
         // it granted access (subscription options 2/3).

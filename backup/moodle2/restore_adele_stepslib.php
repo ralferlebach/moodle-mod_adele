@@ -72,14 +72,34 @@ class restore_adele_activity_structure_step extends restore_activity_structure_s
         $data->teachercourseaccessgrantor = empty($data->teachercourseaccessgrantor)
             ? 0
             : (int) $this->get_mappingid('user', $data->teachercourseaccessgrantor, 0);
+        // The learning path is a site-wide record of local_adele, not part of
+        // the backup (mod_adele #29). On this site and still there: the same
+        // path. Otherwise the number would point at an unrelated path or at
+        // none, so the activity comes back without a path, and the restore
+        // log says so; nobody is subscribed or enrolled through it until a
+        // teacher chooses a path.
+        $pathid = (int) ($data->learningpathid ?? 0);
+        if (
+            $pathid
+            && (!$this->get_task()->is_samesite()
+                || !$DB->record_exists('local_adele_learning_paths', ['id' => $pathid]))
+        ) {
+            $this->log(get_string('restore_pathunset', 'mod_adele', $pathid), \backup::LOG_WARNING);
+            $data->learningpathid = 0;
+        }
         $newitemid = $DB->insert_record('adele', $data);
         $this->apply_activity_instance($newitemid);
     }
 
     /**
-     * Defines steps for the backup process.
+     * Nothing to do once this step has run (mod_adele #29): the activity has
+     * no files besides the intro and no records of its own besides {adele}.
+     * Subscriptions and host enrolments are not restored from the backup at
+     * all - they are derived from the target site once the whole restore is
+     * done, in after_restore(), when the course's enrolments exist again.
      */
     protected function after_execute() {
+        $this->add_related_files('mod_adele', 'intro', null);
     }
 
     /**
