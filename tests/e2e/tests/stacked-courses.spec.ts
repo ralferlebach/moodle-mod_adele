@@ -103,20 +103,15 @@ async function card(page: Page, courseid: string) {
 }
 
 /**
- * The DOM ids that appear more than once on the page - outside the edges of
- * the graph: two of the reference paths store an edge twice, so its path
- * element is drawn twice with the same id (a finding of its own, outside
- * #17: issue draft local_adele-issue-duplicate-edges.md).
+ * The DOM ids that appear more than once on the page - the whole page, the
+ * edges of the graph included (local_adele #603: a path that stores a
+ * connection twice is drawn with it once).
  *
  * @param page The page.
  */
 const duplicateIds = (page: Page) => page.evaluate(() => {
   const seen = new Map<string, number>();
-  document.querySelectorAll('[id]').forEach((e) => {
-    if (!e.closest('.vue-flow__edges')) {
-      seen.set(e.id, (seen.get(e.id) || 0) + 1);
-    }
-  });
+  document.querySelectorAll('[id]').forEach((e) => seen.set(e.id, (seen.get(e.id) || 0) + 1));
   return [...seen].filter(([, n]) => n > 1).map(([id]) => id);
 });
 
