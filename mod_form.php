@@ -228,6 +228,17 @@ class mod_adele_mod_form extends moodleform_mod {
             $mform->setAdvanced('teachercourseaccessmode');
         }
 
+        // Live activity markers in the teachers' view (local_adele #14, #17).
+        $mform->addElement('header', 'livemarkersheader', get_string('livemarkersheader', 'mod_adele'));
+        $mform->addElement('advcheckbox', 'livemarkers', get_string('livemarkers', 'mod_adele'));
+        $mform->addHelpButton('livemarkers', 'livemarkers', 'mod_adele');
+        $mform->setDefault('livemarkers', 0);
+        $mform->addElement('text', 'livewindow', get_string('livewindow', 'mod_adele'), ['size' => 3]);
+        $mform->addHelpButton('livewindow', 'livewindow', 'mod_adele');
+        $mform->setType('livewindow', PARAM_RAW_TRIMMED);
+        $mform->setDefault('livewindow', \mod_adele\local\live_settings::DEFAULT_WINDOW);
+        $mform->hideIf('livewindow', 'livemarkers', 'notchecked');
+
         $this->standard_coursemodule_elements();
         $this->add_action_buttons();
     }
@@ -244,6 +255,16 @@ class mod_adele_mod_form extends moodleform_mod {
         $reason = path_choice::check((int) ($data['learningpathid'] ?? 0), $this->stored_learningpathid());
         if ($reason !== path_choice::OK) {
             $errors['learningpathid'] = get_string($reason, 'mod_adele');
+        }
+
+        // The window is checked here, not in the browser (local_adele #17).
+        if (!empty($data['livemarkers']) || isset($data['livewindow'])) {
+            if (!\mod_adele\local\live_settings::is_valid_window($data['livewindow'] ?? '')) {
+                $errors['livewindow'] = get_string('livewindow_invalid', 'mod_adele', [
+                    'min' => \mod_adele\local\live_settings::MIN_WINDOW,
+                    'max' => \mod_adele\local\live_settings::MAX_WINDOW,
+                ]);
+            }
         }
 
         if (empty($data['participantslist'])) {

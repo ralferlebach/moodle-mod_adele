@@ -131,3 +131,11 @@ $string['teachercourseaccessrequestrecipients_enrolers'] = 'Members who may enro
 $string['teachercourseaccessrequestrecipients_enrolreview'] = 'Members who may review enrolments (moodle/course:enrolreview)';
 $string['teachercourseaccessrole'] = 'Role for "{$a}"';
 $string['teachercourseaccessrole_desc'] = 'The role an enrolment in this mode gives in the course of the learning path. Changing it takes away the enrolments given with the earlier role.';
+
+// Live activity markers (local_adele #14, #17).
+$string['livemarkersheader'] = 'Live activity';
+$string['livemarkers'] = 'Show live activity markers';
+$string['livemarkers_help'] = 'Teachers see on the nodes of the learning path who has recently been active in a node\'s course, and how many learners are active on each node. Activity means an event Moodle recorded on the server (a course or activity was opened) within the activity window; it does not prove that the person is still there. Off by default. When off, no personal live data is loaded.';
+$string['livewindow'] = 'Activity window (minutes)';
+$string['livewindow_help'] = 'How long after the last recorded event in a node\'s course a learner counts as active. Default 5 minutes; 1 to 60 minutes.';
+$string['livewindow_invalid'] = 'Enter a whole number of minutes from {$a->min} to {$a->max}.';

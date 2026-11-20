@@ -68,7 +68,7 @@ const SWITCH = 'Privacy Switch';
 async function listed(page: Page): Promise<string[]> {
   await loginAs(page, env.adminUser, env.adminPassword);
   await page.goto(`/mod/adele/view.php?id=${fixture('ADELE_FIXTURE_P_CM_ALL')}`);
-  await expect(page.locator('#adele-userlist-table tbody tr').first()).toBeVisible({ timeout: 60_000 });
+  await expect(page.locator('[data-testid="adele-userlist-table"] tbody tr').first()).toBeVisible({ timeout: 60_000 });
   await page.waitForLoadState('networkidle');
   return (await participantList(page)).map((row) => row.split(' | ')[0]).sort();
 }

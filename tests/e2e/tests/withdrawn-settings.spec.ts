@@ -511,10 +511,13 @@ const BETA = 'Privacy Beta';
  */
 async function shownLearners(page: Page): Promise<string> {
   await page.goto(`/mod/adele/view.php?id=${fixture('ADELE_FIXTURE_P_CM_SWITCHABLE')}`);
-  const table = page.locator('#adele-userlist-table');
+  const table = page.locator('[data-testid="adele-userlist-table"]');
   await expect(table.locator('tbody tr').first()).toBeVisible({ timeout: 60_000 });
   await page.waitForLoadState('networkidle');
-  return learnersIn(await participantList(page));
+  // A learner's own row in the list, and - separate groups, local_adele #12 -
+  // the ranking of the own group; a teacher's list.
+  const ranked = await page.locator('[data-testid="adele-ranking-row"] .adele-ranking-name').allInnerTexts();
+  return learnersIn([...await participantList(page), ...ranked]);
 }
 
 /**
@@ -523,7 +526,7 @@ async function shownLearners(page: Page): Promise<string> {
  * @param rows Rows or names.
  */
 function learnersIn(rows: string[]): string {
-  return [ALPHA, BETA].filter((name) => rows.some((row) => row.startsWith(name))).join(', ') || 'neither';
+  return [ALPHA, BETA].filter((name) => rows.some((row) => row.includes(name))).join(', ') || 'neither';
 }
 
 /**
@@ -541,9 +544,22 @@ async function rosterThroughSwitchable(page: Page, userid = 0): Promise<string> 
   if (answer.error) {
     return `denied (${answer.error})`;
   }
-  return learnersIn((answer.data as { lastname: string }[]).map((row) => row.lastname));
+  const names = (answer.data as { lastname: string }[]).map((row) => row.lastname);
+  // The ranking of the own group (local_adele #12): what "all results" opens to a learner.
+  const overview = await callService(page, 'local_adele_get_group_overview', {
+    contextid: Number(fixture('ADELE_FIXTURE_P_CM_SWITCHABLE_CONTEXT')),
+  });
+  if (!overview.error) {
+    for (const ranking of (overview.data as { rankings: { members: { fullname: string }[] }[] }).rankings) {
+      names.push(...ranking.members.map((member) => member.fullname));
+    }
+  }
+  return learnersIn(names);
 }
 
+// Since local_adele #12 a learner sees other learners only in the ranking of
+// a shared group; the switchable embedding has separate groups (seed), Alpha
+// and Beta share one. "All" shows the group's ranking, "only own" closes it.
 test.describe('ADELE-E2E-P1/P2 — "Participant results" taken back from "all" to "only own"', () => {
   test('the other learner disappears from page and server; own data and the teacher stay; back to "all"',
     { tag: ['@story:P1', '@story:P2', '@withdrawal'] }, async ({ page, browser }) => {
@@ -576,7 +592,7 @@ test.describe('ADELE-E2E-P1/P2 — "Participant results" taken back from "all" t
 
       await test.step('the page opened before: reloaded, Beta is gone', async () => {
         await stale.reload();
-        await expect(stale.locator('#adele-userlist-table tbody tr').first()).toBeVisible({ timeout: 60_000 });
+        await expect(stale.locator('[data-testid="adele-userlist-table"] tbody tr').first()).toBeVisible({ timeout: 60_000 });
         await stale.waitForLoadState('networkidle');
         expect(learnersIn(await participantList(stale))).toBe(ALPHA);
         await expect(stale.locator('#region-main'), 'not named anywhere on the page').not.toContainText(BETA);

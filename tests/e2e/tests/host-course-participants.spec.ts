@@ -369,7 +369,7 @@ async function pathRoster(page: Page, hostcourse: string, activity: string): Pro
   await loginAs(page, env.adminUser, env.adminPassword);
   await page.goto(`/course/view.php?id=${hostcourse}`);
   await page.getByRole('main').getByRole('link', { name: activity }).click();
-  await expect(page.locator('#adele-userlist-table tbody tr').first()).toBeVisible({ timeout: 60_000 });
+  await expect(page.locator('[data-testid="adele-userlist-table"] tbody tr').first()).toBeVisible({ timeout: 60_000 });
   await page.waitForLoadState('networkidle');
   return (await participantList(page)).map((row) => row.split(' | ')[0]);
 }

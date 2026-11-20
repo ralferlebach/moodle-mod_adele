@@ -234,7 +234,7 @@ async function learnerFinishes(browser: Browser, courseid: string): Promise<void
 async function teacherOpensLearner(page: Page): Promise<void> {
   await page.goto(`/mod/adele/view.php?id=${fixture('ADELE_FIXTURE_S26_CM')}`);
   // The user list links each learner; the row carries the name.
-  const row = page.locator('#adele-userlist-table tbody tr').filter({ hasText: 'Refresh Learner' });
+  const row = page.locator('[data-testid="adele-userlist-table"] tbody tr').filter({ hasText: 'Refresh Learner' });
   await expect(row.first()).toBeVisible({ timeout: 60_000 });
   await row.first().getByRole('link').first().click();
   await expect(page.locator('[data-testid="learningpath-node-dndnode_1"]')).toBeVisible({ timeout: 60_000 });

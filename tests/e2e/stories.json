@@ -31,9 +31,11 @@
     "S17",
     "S11",
     "R26",
-    "F27"
+    "F27",
+    "G16",
+    "L17"
   ],
-  "note": "Sections 16 and 17 of the test plan; K1-K18: local_adele #600 \"Kurszugriff in der Lehrendenansicht\" (TP1-TP4).",
+  "note": "Sections 16 and 17 of the test plan; K1-K18: local_adele #600 \"Kurszugriff in der Lehrendenansicht\" (TP1-TP4). G16: groups and non-learners (local_adele #12, #13, #16); L17: live markers and node counters (local_adele #14, #15, #17).",
   "withdrawal": [
     "H1",
     "H2",

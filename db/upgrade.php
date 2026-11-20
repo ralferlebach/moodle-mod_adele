@@ -133,5 +133,22 @@ function xmldb_adele_upgrade($oldversion) {
         upgrade_mod_savepoint(true, 2026100732, 'adele');
     }
 
+    if ($oldversion < 2026111900) {
+        // Live activity markers per activity (local_adele #14, #17): off, with a
+        // 5-minute window. Existing activities get exactly these defaults; a
+        // value already there (a rerun) is kept.
+        $table = new xmldb_table('adele');
+        $fields = [
+            new xmldb_field('livemarkers', XMLDB_TYPE_INTEGER, '1', null, XMLDB_NOTNULL, null, '0', 'teachercourseaccessgrantor'),
+            new xmldb_field('livewindow', XMLDB_TYPE_INTEGER, '4', null, XMLDB_NOTNULL, null, '5', 'livemarkers'),
+        ];
+        foreach ($fields as $field) {
+            if (!$dbman->field_exists($table, $field)) {
+                $dbman->add_field($table, $field);
+            }
+        }
+        upgrade_mod_savepoint(true, 2026111900, 'adele');
+    }
+
     return true;
 }

@@ -41,6 +41,14 @@ import { loginAs } from '../support/env';
 import { fixture, fixturePassword, reseedFixtures } from '../support/fixtures';
 import { KZ_STACK, kzCourse } from '../support/teacheraccess';
 
+/**
+ * The page-unique id of an element of the ADELE application: every
+ * application prefixes its ids (adele1-, adele2-, ...; local_adele #18).
+ *
+ * @param name The element's id within the application.
+ */
+const appId = (name: string): RegExp => new RegExp(`^adele\\d+-${name}$`);
+
 const LEARNER = () => fixture('ADELE_FIXTURE_KZ_LEARNER');
 
 /**
@@ -151,7 +159,7 @@ test.describe('ADELE-E2E-S17 — stacked courses carry their course (#17)', () =
           const course = kzCourse(n);
           const c = await card(page, course.id);
           expect(c.role).toBe('group');
-          expect(c.id).toBe(`adele-expanded-course-${KZ_STACK}-${course.id}`);
+          expect(c.id).toMatch(appId(`adele-expanded-course-${KZ_STACK}-${course.id}`));
           expect(c.short, 'the short name on the card').toBe(course.short);
           expect(c.heading, 'named by its own heading').toBe(course.full);
           expect(c.desc, 'described by its own visible line').toContain(course.short);
@@ -174,11 +182,10 @@ test.describe('ADELE-E2E-S17 — stacked courses carry their course (#17)', () =
       });
 
       await test.step('the expand button: state, controlled cards, Escape in a panel folds and the button has a visible focus', async () => {
-        const toggle = page.locator(`#adele-stack-toggle-${KZ_STACK}`);
+        const toggle = page.locator(`[data-testid="stack-toggle-${KZ_STACK}"]`);
         await expect(toggle).toHaveAttribute('aria-expanded', 'true');
         const controls = ((await toggle.getAttribute('aria-controls')) || '').split(' ');
-        expect(controls).toEqual([1, 2, 3].map((n) => `adele-expanded-course-${KZ_STACK}-${kzCourse(n).id}`)
-          .concat(controls.slice(3)));
+        [1, 2, 3].forEach((n, i) => expect(controls[i]).toMatch(appId(`adele-expanded-course-${KZ_STACK}-${kzCourse(n).id}`)));
         for (const id of controls) {
           await expect(page.locator(`[id="${id}"]`), `the button controls ${id}`).toHaveCount(1);
         }
@@ -198,7 +205,7 @@ test.describe('ADELE-E2E-S17 — stacked courses carry their course (#17)', () =
       });
 
       await test.step('expanded again from the keyboard (Enter on the focused button): the same identity for each course', async () => {
-        const toggle = page.locator(`#adele-stack-toggle-${KZ_STACK}`);
+        const toggle = page.locator(`[data-testid="stack-toggle-${KZ_STACK}"]`);
         await expect(toggle).toBeFocused();
         await page.keyboard.press('Enter');
         await expect(toggle).toHaveAttribute('aria-expanded', 'true');
@@ -222,15 +229,27 @@ test.describe('ADELE-E2E-S17 — stacked courses carry their course (#17)', () =
         const node = page.locator(`.vue-flow__node.adele-expanded-course-${id}`);
         expect(c.heading, `course ${id}: its own name`).toBe(byId[id].full);
         expect(c.short).toBe(byId[id].short);
-        expect(c.id).toBe(`adele-expanded-course-${KZ_STACK}-${id}`);
+        expect(c.id).toMatch(appId(`adele-expanded-course-${KZ_STACK}-${id}`));
         expect(await node.getAttribute('aria-label')).toContain(byId[id].short);
         expect(await node.getAttribute('aria-label')).toContain(id);
         cards.push(c);
       }
-      // The panels unfold to the right in the order of the stack.
-      expect(cards.map((c) => c.x)).toEqual([...cards.map((c) => c.x)].sort((a, b) => a - b));
-      await expect(page.locator(`#adele-stack-toggle-${KZ_STACK}`))
-        .toHaveAttribute('aria-controls', new RegExp(`^adele-expanded-course-${KZ_STACK}-${order[0]} adele-expanded-course-${KZ_STACK}-${order[1]}`));
+      // The panels unfold to the right in the order of the stack. Measured
+      // together and once the view has stopped moving: read one by one while
+      // the view still pans, a later card was measured further left
+      // (2026-11-20: 816, 1073, 1012).
+      const positions = () => page.evaluate((ids) => ids.map((id) =>
+        document.querySelector(`[data-testid="expanded-course-${id}"]`)!.getBoundingClientRect().left), order.slice(0, 3).map(String));
+      let xs = await positions();
+      await expect.poll(async () => {
+        const now = await positions();
+        const stable = now.every((x, i) => Math.abs(x - xs[i]) < 0.5);
+        xs = now;
+        return stable;
+      }, { timeout: 10_000, intervals: [250] }).toBe(true);
+      expect(xs).toEqual([...xs].sort((a, b) => a - b));
+      await expect(page.locator(`[data-testid="stack-toggle-${KZ_STACK}"]`))
+        .toHaveAttribute('aria-controls', new RegExp(`^adele\\d+-adele-expanded-course-${KZ_STACK}-${order[0]} adele\\d+-adele-expanded-course-${KZ_STACK}-${order[1]}`));
       expect(await duplicateIds(page)).toEqual([]);
     });
 });

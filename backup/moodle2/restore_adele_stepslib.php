@@ -66,6 +66,13 @@ class restore_adele_activity_structure_step extends restore_activity_structure_s
         if (isset($data->hostenrolmentmode) && !in_array($data->hostenrolmentmode, ['visible', 'hidden', 'none'], true)) {
             $data->hostenrolmentmode = 'visible';
         }
+        // The live markers travel with the activity (local_adele #17). An older
+        // backup has none: off, 5 minutes - the documented defaults. A value out
+        // of range is brought into it.
+        $data->livemarkers = empty($data->livemarkers) ? 0 : 1;
+        $data->livewindow = \mod_adele\local\live_settings::clamp_window(
+            isset($data->livewindow) ? (int) $data->livewindow : \mod_adele\local\live_settings::DEFAULT_WINDOW
+        );
         // The grantor of a teacher mode is a person of this site only if the
         // restore maps them; otherwise nobody, and the mode gives no
         // enrolments until somebody with authority saves it (local_adele #600).

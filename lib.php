@@ -37,6 +37,11 @@ function adele_supports($feature) {
         case FEATURE_BACKUP_MOODLE2:
         case FEATURE_COMPLETION_TRACKS_VIEWS:
         case FEATURE_COMPLETION_HAS_RULES:
+            // Group mode and grouping of the activity (local_adele #12, #16): who
+            // sees whose progress follows them, decided on the server
+            // (\mod_adele\local\context_contract).
+        case FEATURE_GROUPS:
+        case FEATURE_GROUPINGS:
             return true;
         default:
             return null;
@@ -66,6 +71,7 @@ function adele_add_instance($moduleinstance, $mform = null) {
     $moduleinstance->participantslist = is_array($moduleinstance->participantslist)
         ? implode(',', $moduleinstance->participantslist)
         : (string) $moduleinstance->participantslist;
+    adele_normalise_live_settings($moduleinstance);
 
     $moduleinstance->completionlearningpathfinished =
         isset($moduleinstance->completionlearningpathfinished) ? $moduleinstance->completionlearningpathfinished : 0;
@@ -158,6 +164,7 @@ function adele_update_instance($moduleinstance, $mform = null) {
     $moduleinstance->participantslist = is_array($moduleinstance->participantslist)
         ? implode(',', $moduleinstance->participantslist)
         : (string) $moduleinstance->participantslist;
+    adele_normalise_live_settings($moduleinstance);
 
     $moduleinstance->completionlearningpathfinished =
         isset($moduleinstance->completionlearningpathfinished) ? $moduleinstance->completionlearningpathfinished : 0;
@@ -381,4 +388,20 @@ function adele_get_coursemodule_info(stdClass $coursemodule) {
     }
 
     return $result;
+}
+
+/**
+ * Live-marker settings as stored (local_adele #17): on/off as 0/1, the window
+ * in whole minutes within 1-60. Missing on an older import path: the defaults.
+ *
+ * @param stdClass $moduleinstance The data to store (changed in place).
+ * @return void
+ */
+function adele_normalise_live_settings(stdClass $moduleinstance): void {
+    $moduleinstance->livemarkers = empty($moduleinstance->livemarkers) ? 0 : 1;
+    $moduleinstance->livewindow = \mod_adele\local\live_settings::clamp_window(
+        isset($moduleinstance->livewindow) && is_numeric($moduleinstance->livewindow)
+            ? (int) $moduleinstance->livewindow
+            : \mod_adele\local\live_settings::DEFAULT_WINDOW
+    );
 }
