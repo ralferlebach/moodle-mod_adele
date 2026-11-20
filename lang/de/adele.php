@@ -62,6 +62,12 @@ $string['event_course_access_requested'] = 'Kurszugang angefragt';
 $string['event_node_course_enrolled'] = 'Lehrperson in einen Kurs des Lernpfads eingeschrieben';
 $string['learningpathdeleted'] = 'Der Lernpfad, den diese Aktivität eingebettet hat, wurde gelöscht.';
 $string['learningpathnotset'] = 'Für diese Aktivität ist noch kein Lernpfad gewählt. Lehrende können ihn in den Einstellungen der Aktivität wählen.';
+$string['livemarkers'] = 'Live-Aktivitätsmarker anzeigen';
+$string['livemarkers_help'] = 'Lehrende sehen an den Knoten des Lernpfads, wer zuletzt in einem Kurs des Knotens aktiv war, und wie viele Lernende an jedem Knoten aktiv sind. Aktivität heißt: Moodle hat innerhalb des Aktivitätsfensters ein Ereignis auf dem Server erfasst (ein Kurs oder eine Aktivität wurde geöffnet); das beweist nicht, dass die Person noch da ist. Standardmäßig aus. Ausgeschaltet werden keine personenbezogenen Live-Daten geladen.';
+$string['livemarkersheader'] = 'Live-Aktivität';
+$string['livewindow'] = 'Aktivitätsfenster (Minuten)';
+$string['livewindow_help'] = 'Wie lange nach dem letzten erfassten Ereignis in einem Kurs des Knotens eine Person als aktiv gilt. Standard 5 Minuten; 1 bis 60 Minuten.';
+$string['livewindow_invalid'] = 'Bitte eine ganze Zahl von {$a->min} bis {$a->max} Minuten eingeben.';
 $string['messageprovider:courseaccessrequest'] = 'Anfragen von Lehrenden nach Zugang zu einem Kurs eines Lernpfads';
 $string['mform_options_create_learningpath'] = 'Neuen Lernpfad erstellen';
 $string['mform_options_hostenrolmentmode_hidden'] = 'verdeckt (als deaktivierte Einschreibung)';
@@ -131,11 +137,3 @@ $string['teachercourseaccessrequestrecipients_enrolers'] = 'Mitglieder, die eins
 $string['teachercourseaccessrequestrecipients_enrolreview'] = 'Mitglieder, die Einschreibungen prüfen dürfen (moodle/course:enrolreview)';
 $string['teachercourseaccessrole'] = 'Rolle für „{$a}“';
 $string['teachercourseaccessrole_desc'] = 'Die Rolle, die eine Einschreibung in diesem Modus im Kurs des Lernpfads erteilt. Eine Änderung nimmt die mit der früheren Rolle erteilten Einschreibungen zurück.';
-
-// Live-Aktivitätsmarker (local_adele #14, #17).
-$string['livemarkersheader'] = 'Live-Aktivität';
-$string['livemarkers'] = 'Live-Aktivitätsmarker anzeigen';
-$string['livemarkers_help'] = 'Lehrende sehen an den Knoten des Lernpfads, wer zuletzt in einem Kurs des Knotens aktiv war, und wie viele Lernende an jedem Knoten aktiv sind. Aktivität heißt: Moodle hat innerhalb des Aktivitätsfensters ein Ereignis auf dem Server erfasst (ein Kurs oder eine Aktivität wurde geöffnet); das beweist nicht, dass die Person noch da ist. Standardmäßig aus. Ausgeschaltet werden keine personenbezogenen Live-Daten geladen.';
-$string['livewindow'] = 'Aktivitätsfenster (Minuten)';
-$string['livewindow_help'] = 'Wie lange nach dem letzten erfassten Ereignis in einem Kurs des Knotens eine Person als aktiv gilt. Standard 5 Minuten; 1 bis 60 Minuten.';
-$string['livewindow_invalid'] = 'Bitte eine ganze Zahl von {$a->min} bis {$a->max} Minuten eingeben.';
