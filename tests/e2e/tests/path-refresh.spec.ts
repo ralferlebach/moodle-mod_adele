@@ -110,6 +110,11 @@ async function openPath(page: Page, c?: { calls: number; open: number; maxOpen: 
   const href = await page.getByRole('main').getByRole('link', { name: 'E2E 26 Pfad' }).getAttribute('href');
   await page.goto('about:blank');
   if (c) {
+    // A request the course page sent just before it was left is still being
+    // held by the counter's delay; started on the course page, it does not
+    // belong to this count - wait until it is out (2026-11-21: it overlapped
+    // the path page's first request and was counted as a second one at once).
+    await expect.poll(() => c.open, { timeout: 15_000 }).toBe(0);
     c.calls = 0;
     c.maxOpen = 0;
   }

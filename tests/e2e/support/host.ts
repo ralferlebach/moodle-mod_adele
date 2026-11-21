@@ -280,6 +280,55 @@ export function nightlySweep(): void {
 }
 
 /**
+ * As administrator: enrol somebody through Moodle's "Enrol users" dialog.
+ *
+ * The picker is a Moodle autocomplete. A click on its suggestion can be lost
+ * while the autocomplete is still being set up or redraws its list (CI
+ * 2026-11-21: the form was sent without a user - "0 enrolled users" - and the
+ * test only noticed later). So the choice is confirmed in the selection area
+ * and made again - by keyboard - until it holds, and the enrolment itself is
+ * confirmed by Moodle's answer: exactly one person enrolled.
+ *
+ * @param page The page, logged in as administrator, on the participants page.
+ * @param name The person's full name.
+ * @param role The role's name in the dialog, e.g. "Student".
+ */
+export async function enrolInDialog(page: Page, name: string, role: string): Promise<void> {
+  await page.getByRole('button', { name: /Enrol users|Nutzer.*einschreiben/i }).first().click();
+  const dialog = page.locator('.modal.show').filter({ has: page.locator('form') }).last();
+  await expect(dialog).toBeVisible({ timeout: 15_000 });
+  const picker = dialog.getByRole('combobox', { name: /Select users|Nutzer.*auswählen/i }).first();
+  // The selection area exists once the autocomplete is set up.
+  const selection = dialog.locator('.form-autocomplete-selection').first();
+  await expect(selection).toBeAttached({ timeout: 15_000 });
+  const pattern = new RegExp(name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+  let attempt = 0;
+  await expect(async () => {
+    if (!pattern.test(await selection.innerText())) {
+      attempt++;
+      await picker.fill('');
+      await picker.fill(name);
+      const option = dialog.getByRole('option', { name: pattern }).first();
+      await option.waitFor({ state: 'visible', timeout: 10_000 });
+      if (attempt === 1) {
+        await option.click();
+      } else {
+        // The way a keyboard user chooses: the first suggestion, then Enter.
+        await picker.press('ArrowDown');
+        await picker.press('Enter');
+      }
+    }
+    await expect(selection).toContainText(pattern, { timeout: 3_000 });
+  }, `${name} chosen in the enrolment dialog`).toPass({ timeout: 60_000 });
+  await dialog.getByRole('combobox', { name: /Assign role|Rolle zuweisen/i }).selectOption({ label: role });
+  const answer = page.waitForResponse((r) => r.url().includes('/enrol/manual/ajax.php') && r.url().includes('action=enrol'));
+  await dialog.getByRole('button', { name: /^Enrol users|Nutzer einschreiben$/i }).click();
+  const body = await (await answer).json();
+  expect(body, `Moodle enrols ${name} as ${role}`).toMatchObject({ success: true, count: 1 });
+  await page.waitForLoadState('networkidle');
+}
+
+/**
  * As administrator: enrol somebody as a student, on Moodle's participants page.
  *
  * @param page The page, logged in as administrator.
@@ -288,13 +337,7 @@ export function nightlySweep(): void {
  */
 export async function enrolAsStudent(page: Page, courseid: string, name: string): Promise<void> {
   await page.goto(`/user/index.php?id=${courseid}`);
-  await page.getByRole('button', { name: /Enrol users|Nutzer.*einschreiben/i }).first().click();
-  const picker = page.getByRole('combobox', { name: /Select users|Nutzer.*auswählen/i }).first();
-  await picker.fill(name);
-  await page.getByRole('option', { name: new RegExp(name) }).first().click();
-  await page.getByRole('combobox', { name: /Assign role|Rolle zuweisen/i }).selectOption({ label: 'Student' });
-  await page.getByRole('button', { name: /^Enrol users|Nutzer einschreiben$/i }).last().click();
-  await page.waitForLoadState('networkidle');
+  await enrolInDialog(page, name, 'Student');
 }
 
 /**
