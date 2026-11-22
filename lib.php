@@ -304,6 +304,9 @@ function mod_adele_cm_info_view(cm_info $cm) {
         $alisecompatible = local_adele::get_internal_quiz_id($learningpathmod->learningpathid, $PAGE->course->id);
         $modulecontext = context_module::instance($cm->id);
         $mode = \mod_adele\local\view_mode::for_context($modulecontext);
+        // The setting "Participant results" applies without groups only (decision
+        // 2026-11-22); the client's mirror of it gets the value in effect.
+        $userlist = (int) groups_get_activity_groupmode($cm) === NOGROUPS ? (int) $learningpathmod->userlist : 1;
         if ($mode['view'] === 'teacher') {
             if ($alisecompatible['alisecompatible']) {
                 $html = $OUTPUT->render_from_template(
@@ -313,7 +316,7 @@ function mod_adele_cm_info_view(cm_info $cm) {
                     'contextid' => $modulecontext->id,
                     'quizsetting' => get_config('local_adele', 'quizsettings'),
                     'learningpath' => $learningpathmod->learningpathid,
-                    'userlist' => $learningpathmod->userlist,
+                    'userlist' => $userlist,
                     'view' => "teacher",
                     // Without the right to change a learner's path the view is read-only (#39).
                     'readonly' => $mode['readonly'],
@@ -339,7 +342,7 @@ function mod_adele_cm_info_view(cm_info $cm) {
                     'contextid' => $modulecontext->id,
                     'quizsetting' => get_config('local_adele', 'quizsettings'),
                     'learningpath' => $learningpathmod->learningpathid,
-                    'userlist' => $learningpathmod->userlist,
+                    'userlist' => $userlist,
                     'view' => "student",
                     'wwwroot' => $CFG->wwwroot,
                     'version' => $CFG->version,

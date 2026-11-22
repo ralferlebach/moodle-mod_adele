@@ -131,6 +131,8 @@ class mod_adele_mod_form extends moodleform_mod {
         ];
         $mform->addElement('select', 'userlist', get_string('mform_select_userlist', 'mod_adele'), $userlist);
         $mform->setDefault('userlist', 2);
+        // The setting applies without groups only (decision 2026-11-22); the help says so.
+        $mform->addHelpButton('userlist', 'mform_select_userlist', 'mod_adele');
 
         $participantslist = [
           1 => get_string('mform_options_participantslist_this_course', 'mod_adele'),
@@ -240,7 +242,33 @@ class mod_adele_mod_form extends moodleform_mod {
         $mform->hideIf('livewindow', 'livemarkers', 'notchecked');
 
         $this->standard_coursemodule_elements();
+        $this->userlist_only_without_groups();
         $this->add_action_buttons();
+    }
+
+    /**
+     * "Participant results" is shown and applies only without groups
+     * (decision 2026-11-22): with separate or visible groups learners see
+     * the ranking of their own group(s) whatever the stored value says
+     * (local_adele #12), so the field is hidden there. A group mode the
+     * course forces cannot change in this form: the field is left out and
+     * the stored value kept, as core does for the grouping.
+     */
+    private function userlist_only_without_groups(): void {
+        global $COURSE;
+        $mform = $this->_form;
+        if (!empty($COURSE->groupmodeforce)) {
+            if ((int) $COURSE->groupmode !== NOGROUPS) {
+                $mform->removeElement('userlist');
+                $mform->addElement('hidden', 'userlist');
+                $mform->setType('userlist', PARAM_INT);
+                $mform->setDefault('userlist', 2);
+            }
+            return;
+        }
+        if ($mform->elementExists('groupmode')) {
+            $mform->hideIf('userlist', 'groupmode', 'neq', NOGROUPS);
+        }
     }
 
     /**

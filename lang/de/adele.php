@@ -91,6 +91,7 @@ $string['mform_select_hostenrolmentmode_help'] = 'Nur relevant für die Teilnehm
 $string['mform_select_learningpath'] = 'Gewählter Lernpfad';
 $string['mform_select_participantslist'] = 'Lernpfadeinschreibung';
 $string['mform_select_userlist'] = 'Teilnehmer sehen';
+$string['mform_select_userlist_help'] = 'Gilt für Aktivitäten ohne Gruppen; bei getrennten oder sichtbaren Gruppen ist die Einstellung ausgeblendet und ohne Wirkung – Lernende sehen dann die Rangliste ihrer eigenen Gruppe(n) (sichtbare Gruppen: auch die Gruppenmittelwerte). Ohne Gruppen zeigt „Ergebnisse aller anderer Teilnehmer“ Lernenden die Rangliste der Lernenden dieser Aktivität (Name, Fortschritt, Rang; kein Pfad anderer lässt sich öffnen); „nur eigene Ergebnisse“ zeigt nur die eigene Zeile. Lehrende sind nicht betroffen.';
 $string['mform_select_view'] = 'Lernpfad anzeigen';
 $string['mod/adele:seelearningpath'] = 'Kann Lernpfade sehen';
 $string['modulename'] = 'Lernpfad';

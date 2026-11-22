@@ -287,4 +287,52 @@ final class groups_and_live_settings_test extends \advanced_testcase {
         $this->assertSame('5', (string) $columns['livewindow']->default_value);
         $this->assertTrue((bool) $columns['livewindow']->not_null);
     }
+
+    /**
+     * An installation from before the live settings (#17 AK2-M2, DoD2-M1
+     * "Altinstallationen"): the upgrade adds both fields to the existing
+     * activity with the documented defaults, leaves its other settings alone,
+     * and a second run keeps a value already there.
+     */
+    public function test_upgrade_of_an_old_installation(): void {
+        global $CFG, $DB;
+        require_once($CFG->libdir . '/upgradelib.php');
+        require_once($CFG->dirroot . '/mod/adele/db/upgrade.php');
+        $activity = $this->activity(['userlist' => 1, 'livemarkers' => 1, 'livewindow' => 30]);
+        $before = $DB->get_record('adele', ['id' => $activity->id]);
+        $dbman = $DB->get_manager();
+        $table = new \xmldb_table('adele');
+        $fields = [
+            new \xmldb_field('livemarkers', XMLDB_TYPE_INTEGER, '1', null, XMLDB_NOTNULL, null, '0', 'teachercourseaccessgrantor'),
+            new \xmldb_field('livewindow', XMLDB_TYPE_INTEGER, '4', null, XMLDB_NOTNULL, null, '5', 'livemarkers'),
+        ];
+        // The schema of 2026101800: without the two fields.
+        foreach (array_reverse($fields) as $field) {
+            $dbman->drop_field($table, $field);
+        }
+        // ... and the version that went with it.
+        set_config('version', 2026101800, 'mod_adele');
+        try {
+            $this->assertFalse($dbman->field_exists($table, $fields[0]));
+            $this->assertTrue(xmldb_adele_upgrade(2026101800));
+            $this->assertSame('2026111900', get_config('mod_adele', 'version'), 'the savepoint of the step was reached');
+        } finally {
+            // Whatever happened, the schema is complete again for the tests after this one.
+            foreach ($fields as $field) {
+                if (!$dbman->field_exists($table, $field)) {
+                    $dbman->add_field($table, $field);
+                }
+            }
+        }
+        $after = $DB->get_record('adele', ['id' => $activity->id]);
+        $this->assertSame(['0', '5'], [(string) $after->livemarkers, (string) $after->livewindow], 'the documented defaults');
+        foreach (['name', 'learningpathid', 'userlist', 'participantslist', 'view'] as $kept) {
+            $this->assertEquals($before->{$kept}, $after->{$kept}, "{$kept} is left alone");
+        }
+        // A second run (an interrupted upgrade run again) keeps what is there.
+        $DB->set_field('adele', 'livewindow', 12, ['id' => $activity->id]);
+        set_config('version', 2026101800, 'mod_adele');
+        $this->assertTrue(xmldb_adele_upgrade(2026101800));
+        $this->assertSame('12', (string) $DB->get_field('adele', 'livewindow', ['id' => $activity->id]));
+    }
 }

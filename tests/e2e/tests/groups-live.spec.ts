@@ -159,7 +159,7 @@ test.describe('ADELE-E2E-G16 — groups and non-learners (#12, #13, #16)', () =>
       await expect(section).toHaveCount(1, { timeout: 30_000 });
       const own = section.locator('[data-testid^="adele-own-average-"]');
       await expect(own).toContainText('50 %');
-      await expect(own).toContainText('2 of 2');
+      await expect(own).toContainText(/average over 2 learners\)|Mittel über 2 Lernende\)/);
       // Above the list.
       const ownBox = await own.boundingBox();
       const listBox = await section.locator('.adele-ranking-list').boundingBox();
@@ -170,7 +170,7 @@ test.describe('ADELE-E2E-G16 — groups and non-learners (#12, #13, #16)', () =>
       // Rot: Anna 66.67, Bert 33.33, Nora 0 -> 33.3.
       await expect(others.first()).toContainText('Gruppe Rot');
       await expect(others.first()).toContainText('33.3 %');
-      await expect(others.first()).toContainText('3 of 3');
+      await expect(others.first()).toContainText(/average over 3 learners\)|Mittel über 3 Lernende\)/);
       for (const name of [fixture('ADELE_FIXTURE_G16_ANNA_NAME'), fixture('ADELE_FIXTURE_G16_BERT_NAME')]) {
         await expect(page.locator('body')).not.toContainText(name);
         expect(answers.join('\n')).not.toContain(name);
@@ -336,6 +336,67 @@ test.describe('ADELE-E2E-L17 — live markers and node counters (#14, #15, #17)'
           }
           return Math.abs((n.x + n.width / 2) - (f.x + f.width / 2));
         }, { timeout: 10_000, message: 'the node is centred horizontally' }).toBeLessThan(60);
+      });
+    });
+
+  test('L3 the way back from a learner: group, viewport, scroll position and focus are kept - by marker and by counter (#15 AK3.5, DoD3.4)',
+    { tag: ['@story:L17'] }, async ({ page, browser }) => {
+      test.setTimeout(180_000);
+      const dirkname = fixture('ADELE_FIXTURE_G16_DIRK_NAME');
+      await learnerOpensCourse(browser, fixture('ADELE_FIXTURE_G16_DIRK'), fixture('ADELE_FIXTURE_COURSE_T01'));
+      await loginAsAdmin(page);
+      await page.setViewportSize({ width: 1280, height: 700 });
+      await page.goto(VIEW(fixture('ADELE_FIXTURE_G16_SEPARATE')));
+      const select = app(page).locator('[data-testid="adele-group-selector"] select');
+      await expect(select).toBeVisible({ timeout: 30_000 });
+      const blau = await select.locator('option', { hasText: 'Blau' }).getAttribute('value');
+      await select.selectOption(blau as string);
+      const live = app(page).locator('[data-testid="adele-node-live-dndnode_1"]');
+      const marker = live.locator('.adele-marker').filter({ hasText: dirkname });
+      await expect(marker).toHaveAttribute('data-state', 'active', { timeout: 30_000 });
+
+      const pane = app(page).locator('.vue-flow__transformationpane').first();
+      const state = async () => ({
+        transform: await pane.evaluate((el) => (el as HTMLElement).style.transform),
+        scrolly: await page.evaluate(() => Math.round(window.scrollY)),
+        group: await select.inputValue(),
+      });
+      const back = async () => {
+        await expect(app(page).locator('[data-testid="learningpath-outline-toggle"]')).toBeVisible({ timeout: 30_000 });
+        await app(page).locator('[data-testid="adele-userpath-back"]').click();
+        await expect(live).toBeVisible({ timeout: 30_000 });
+      };
+
+      await test.step('by marker: the overview comes back as it was left, the marker has the focus', async () => {
+        // Move the graph and the page, so "as left" differs from a fresh start.
+        const box = (await app(page).locator('.vue-flow__pane').first().boundingBox())!;
+        await page.mouse.move(box.x + 40, box.y + 40);
+        await page.mouse.down();
+        await page.mouse.move(box.x + 140, box.y + 90, { steps: 5 });
+        await page.mouse.up();
+        // Leave the page scrolled: the marker in view (a click scrolls it there anyway).
+        await marker.scrollIntoViewIfNeeded();
+        await page.evaluate(() => window.scrollBy(0, 40));
+        await marker.scrollIntoViewIfNeeded();
+        const before = await state();
+        expect(before.scrolly, 'the page is scrolled when left').toBeGreaterThan(0);
+        await marker.click();
+        await back();
+        await expect.poll(state, { timeout: 10_000, message: 'group, viewport and scroll position kept' }).toEqual(before);
+        await expect(live.locator('.adele-marker').filter({ hasText: dirkname })).toBeFocused({ timeout: 10_000 });
+      });
+
+      await test.step('by keyboard: counter, name, learner - back: the counter has the focus', async () => {
+        const counter = live.locator('[data-testid="adele-counter-active-dndnode_1"]');
+        await counter.focus();
+        await page.keyboard.press('Enter');
+        const name = page.locator('[data-testid="adele-live-person"]').filter({ hasText: dirkname });
+        await expect(name).toBeFocused();
+        const before = await state();
+        await page.keyboard.press('Enter');
+        await back();
+        await expect.poll(state, { timeout: 10_000 }).toEqual(before);
+        await expect(live.locator('[data-testid="adele-counter-active-dndnode_1"]')).toBeFocused({ timeout: 10_000 });
       });
     });
 

@@ -37,7 +37,7 @@ import { test, expect, Page } from '@playwright/test';
 import { env, loginAs } from '../support/env';
 import {
   drainTaskQueue, enrolmentState, expectCourseClosed, expectCourseClosedAfterTasks, expectCourseOpenAfterTasks,
-  fixture, fixturePassword, hasServerClock, reseedFixtures, resetServerTime, setServerTime,
+  fixture, fixturePassword, hasServerClock, reseedFixtures,
 } from '../support/fixtures';
 import {
   embedWith, enrolAsStudent, onPath, participantRow, SOURCE_ANY, SOURCE_START, unenrolMethod,
@@ -64,12 +64,8 @@ function methods(person: string, courseid: string): string[] {
  * then the clock goes back.
  */
 function afterGracePeriod(): void {
-  try {
-    setServerTime(Date.now() / 1000 + GRACE + 60);
-    drainTaskQueue();
-  } finally {
-    resetServerTime();
-  }
+  // Only the task runner lives in the future (support/fixtures: cliClockEnv).
+  drainTaskQueue(Date.now() / 1000 + GRACE + 60);
 }
 
 /**

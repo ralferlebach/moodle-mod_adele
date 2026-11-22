@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { writeFileSync } from 'node:fs';
+import { renameSync, writeFileSync } from 'node:fs';
 import { Locator, Page, expect } from '@playwright/test';
 
 /**
@@ -217,14 +217,38 @@ export async function courseAccess(
  * and proves nothing anyway - a timeout cannot tell a slow task from one
  * that never ran.
  */
-export function drainTaskQueue(): void {
+export function drainTaskQueue(at?: number): void {
   execFileSync('php', ['-d', 'max_input_vars=5000', 'admin/cli/adhoc_task.php', '--execute'], {
     cwd: fixture('ADELE_MOODLE_ROOT'),
     encoding: 'utf8',
     // The task runner must see the same (possibly shifted) time as the web
-    // server, or a task the server considers due would be refused here.
-    env: { ...process.env, ...serverTimeEnv() },
+    // server, or a task the server considers due would be refused here -
+    // or, with "at", a time of its own (cliClockEnv()).
+    env: { ...process.env, ...(at === undefined ? serverTimeEnv() : cliClockEnv(at)) },
   });
+}
+
+/**
+ * Environment that puts ONE PHP command-line process at an instant of its
+ * own, leaving the web server's clock alone.
+ *
+ * For chains in which only tasks have to live in the future (a retention or
+ * grace period passing): moving the shared clock forwards and back again
+ * also moves it under requests the web server is still serving - a request
+ * of the page just left, still running - and a request that computed a
+ * deadline in the future and then sees the clock jump back a month waits
+ * that month (CI 2026-11-21: from that moment the web server answered
+ * nothing, every following test timed out). Empty without a test clock.
+ *
+ * @param epoch The instant the process should see as "now" (Unix seconds).
+ */
+export function cliClockEnv(epoch: number): Record<string, string> {
+  const lib = process.env.ADELE_FAKETIME_LIB;
+  if (!lib || !process.env.ADELE_FAKETIME_FILE) {
+    return {};
+  }
+  const offset = Math.round(epoch - Date.now() / 1000);
+  return { LD_PRELOAD: lib, FAKETIME: `${offset >= 0 ? '+' : ''}${offset}s`, FAKETIME_NO_CACHE: '1' };
 }
 
 /**
@@ -263,7 +287,20 @@ export function setServerTime(epoch: number): void {
     throw new Error('No test clock: ADELE_FAKETIME_FILE is not set.');
   }
   const offset = Math.round(epoch - Date.now() / 1000);
-  writeFileSync(file, `${offset >= 0 ? '+' : ''}${offset}s\n`);
+  writeClockFile(file, `${offset >= 0 ? '+' : ''}${offset}s\n`);
+}
+
+/**
+ * Write the clock file in one step: a reader (libfaketime reads it on every
+ * clock call) never sees it truncated or half written.
+ *
+ * @param file The clock file.
+ * @param content The offset.
+ */
+function writeClockFile(file: string, content: string): void {
+  const temp = `${file}.${process.pid}.tmp`;
+  writeFileSync(temp, content);
+  renameSync(temp, file);
 }
 
 /**
@@ -310,7 +347,7 @@ export function reseedFixtures(): void {
 export function resetServerTime(): void {
   const file = process.env.ADELE_FAKETIME_FILE;
   if (file) {
-    writeFileSync(file, '+0s\n');
+    writeClockFile(file, '+0s\n');
   }
 }
 

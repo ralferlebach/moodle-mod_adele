@@ -31,9 +31,10 @@
  *
  *   P1  a learner sees the own status, progress and percentage - and nothing
  *       of the other learner, neither on the page nor in what the server sends
- *   P2  with "results of all other participants": teachers list both learners;
- *       participants still only their own row (local_adele #12, no groups)
- *       with the correct values; the teacher reaches a learner's detail view
+ *   P2  with "results of all other participants" (no groups): teachers list
+ *       both learners, participants too - without a way into anybody's
+ *       path (decision 2026-11-22: the setting applies without groups only);
+ *       the teacher reaches a learner's detail view
  *   P3  the same question for every role (table below); the teacher without
  *       editing rights sees what the teacher sees and changes nothing (#39)
  *   P4  a participant asks for foreign data directly: foreign row, foreign
@@ -237,12 +238,24 @@ test.describe('ADELE-E2E-P — learner data in a course that embeds a path', () 
     }
   });
 
-  test('P2: with "results of all other participants" teachers list both learners, participants their own row', { tag: ['@story:P2'] }, async ({ page }) => {
-    await test.step('without groups a participant sees the own row only - "all" opens no roster to learners (local_adele #12)',
+  test('P2: with "results of all other participants" teachers and participants list both learners', { tag: ['@story:P2'] }, async ({ page }) => {
+    await test.step('without groups "all" shows a participant both learners - no link, no ids (decision 2026-11-22)',
       async () => {
         await loginAsPerson(page, 'A');
         await expect.poll(() => embedding(page, 'ALL'), { timeout: 60_000, intervals: [2_000, 5_000] })
-          .toBe(`participant view: ${ALPHA_ROW}`);
+          .toBe(`participant view: ${ALPHA_ROW} ; ${BETA_ROW}`);
+        // What the server sent: Beta's row without Beta's id or username.
+        const answer = await callService(page, 'local_adele_get_user_path_relations', {
+          userid: 0,
+          learningpathid: pathId(),
+          contextid: contextId('CM_ALL'),
+        });
+        const beta = (answer.data as { id: number; username: string; lastname: string }[])
+          .find((row) => row.lastname === BETA);
+        expect(beta, "Beta's row").toBeTruthy();
+        expect(beta!.id, "no user id of Beta").toBeLessThan(0);
+        expect(beta!.username, 'no username of Beta').toBe('');
+        expect((answer.data as { id: number }[]).map((row) => row.id), "Beta's id nowhere").not.toContain(userId('B'));
       });
 
     await test.step('the teacher sees both in either embedding, with a way into the detail view', async () => {
@@ -297,9 +310,10 @@ test.describe('ADELE-E2E-P — learner data in a course that embeds a path', () 
       // Collaborator of THIS path, enrolled as a participant: a participant -
       // only own data (here: none, no path of their own), never a detail.
       // Working on the path adds nothing (used to: the full roster and Beta's
-      // snapshot). "All results" opens no roster to participants without
-      // groups (local_adele #12 AK0-L2; before: both learners).
-      ['COLLABORATOR', 'participant view: neither learner', 'participant view: neither learner', 'neither learner',
+      // snapshot). "All results" without groups shows participants the
+      // activity's learners, without a way into their paths (decision
+      // 2026-11-22).
+      ['COLLABORATOR', 'participant view: neither learner', `participant view: ${ALPHA_ROW} ; ${BETA_ROW}`, 'neither learner',
         'denied (nopermissions)', 'collaborator of the path, a participant here'],
       // The ADELE system roles are in no course: no page shows them the
       // embedding, and the server answers neither - not the manager (used
@@ -307,9 +321,9 @@ test.describe('ADELE-E2E-P — learner data in a course that embeds a path', () 
       ['MANAGER', 'no access', 'no access', 'denied (nopermissions)', 'denied (nopermissions)', 'ADELE manager'],
       ['ASSISTANT', 'no access', 'no access', 'denied (nopermissions)', 'denied (nopermissions)',
         'ADELE assistant (editor of another path)'],
-      // Participant: the own row - also with "all results" (local_adele #12
-      // AK0-L2: without groups learners are isolated); never a detail.
-      ['A', `participant view: ${ALPHA_ROW}`, `participant view: ${ALPHA_ROW}`, ALPHA, 'denied (nopermissions)',
+      // Participant: the own row with "only own results", both learners
+      // with "all results" (no groups, decision 2026-11-22); never a detail.
+      ['A', `participant view: ${ALPHA_ROW}`, `participant view: ${ALPHA_ROW} ; ${BETA_ROW}`, ALPHA, 'denied (nopermissions)',
         'participant'],
       // People of another course: nothing.
       ['OUTSIDER', 'no access', 'no access', 'denied (nopermissions)', 'denied (nopermissions)',

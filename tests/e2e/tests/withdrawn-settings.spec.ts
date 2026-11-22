@@ -40,10 +40,13 @@
  *               is saved (decision of 2026-10-13) -, the person of the other
  *               source keeps theirs, and nothing ADELE did not create is
  *               touched; restored, it gives it back.
- *   C  (P1/P2)  "Participant results" taken back from "all" to "only own":
- *               the other learner is gone from the page AND from what the
- *               server hands out, also to a page opened before the change
- *               and to a request that worked before; back to "all".
+ *   C  (P1/P2)  "Participant results" taken back from "all" to "only own"
+ *               (an embedding without groups - the setting applies there
+ *               only, decision 2026-11-22): the other learner is gone from
+ *               the page AND from what the server hands out, also to a page
+ *               opened before the change and to a request that worked
+ *               before; back to "all". Switched to separate groups, the
+ *               field is hidden and a stored "only own" changes nothing.
  *
  * Only the browser and Moodle's form change settings here; the server is
  * read, never written, by the test (addendum, DoD).
@@ -70,12 +73,11 @@ import {
   nodeStatus,
   participantList,
   referencePath,
+  cliClockEnv,
   reseedFixtures,
-  resetServerTime,
   runCompletion,
   runLabel,
   serverTimeEnv,
-  setServerTime,
 } from '../support/fixtures';
 import {
   editEmbedding,
@@ -158,11 +160,12 @@ async function expectCourseOpenAnyEnrolment(page: Page, courseid: string, becaus
  * Run enrol_adele's nightly reconcile once, on the server's (test) clock.
  * Its pass 7 is what finds subscriptions no embedding carries any more.
  */
-function runNightlyReconcile(): void {
+function runNightlyReconcile(at?: number): void {
   execFileSync('php', ['-d', 'max_input_vars=5000', 'admin/cli/scheduled_task.php',
     '--execute=\\enrol_adele\\task\\reconcile_task'],
-  { cwd: fixture('ADELE_MOODLE_ROOT'), encoding: 'utf8', env: { ...process.env, ...serverTimeEnv() } });
-  drainTaskQueue();
+  { cwd: fixture('ADELE_MOODLE_ROOT'), encoding: 'utf8',
+    env: { ...process.env, ...(at === undefined ? serverTimeEnv() : cliClockEnv(at)) } });
+  drainTaskQueue(at);
 }
 
 /**
@@ -188,14 +191,11 @@ function afterRetentionPeriod(): void {
   const days = retentionDays();
   expect(days, 'the site must have a retention period, or nothing is ever removed').toBeGreaterThan(0);
   const ahead = Date.now() / 1000 + (days + 1) * 86400;
-  try {
-    setServerTime(ahead);
-    runNightlyReconcile();
-    setServerTime(ahead + 400);
-    drainTaskQueue();
-  } finally {
-    resetServerTime();
-  }
+  // Only the task runner lives in the future; the web server's clock is not
+  // moved (support/fixtures: cliClockEnv - a clock moved back under a running
+  // request stalled the web server in CI, 2026-11-21).
+  runNightlyReconcile(ahead);
+  drainTaskQueue(ahead + 400);
 }
 
 for (const variant of [
@@ -514,7 +514,8 @@ async function shownLearners(page: Page): Promise<string> {
   const table = page.locator('[data-testid="adele-userlist-table"]');
   await expect(table.locator('tbody tr').first()).toBeVisible({ timeout: 60_000 });
   await page.waitForLoadState('networkidle');
-  // A learner's own row in the list, and - separate groups, local_adele #12 -
+  // The participant list (without groups: the activity's learners with
+  // "all", the own row with "only own"), and - with groups, local_adele #12 -
   // the ranking of the own group; a teacher's list.
   const ranked = await page.locator('[data-testid="adele-ranking-row"] .adele-ranking-name').allInnerTexts();
   return learnersIn([...await participantList(page), ...ranked]);
@@ -545,7 +546,7 @@ async function rosterThroughSwitchable(page: Page, userid = 0): Promise<string> 
     return `denied (${answer.error})`;
   }
   const names = (answer.data as { lastname: string }[]).map((row) => row.lastname);
-  // The ranking of the own group (local_adele #12): what "all results" opens to a learner.
+  // The ranking of the own group (local_adele #12), once the embedding has groups.
   const overview = await callService(page, 'local_adele_get_group_overview', {
     contextid: Number(fixture('ADELE_FIXTURE_P_CM_SWITCHABLE_CONTEXT')),
   });
@@ -557,9 +558,11 @@ async function rosterThroughSwitchable(page: Page, userid = 0): Promise<string> 
   return learnersIn(names);
 }
 
-// Since local_adele #12 a learner sees other learners only in the ranking of
-// a shared group; the switchable embedding has separate groups (seed), Alpha
-// and Beta share one. "All" shows the group's ranking, "only own" closes it.
+// "Participant results" applies without groups only (decision 2026-11-22):
+// the switchable embedding has none (seed). "All" lists the activity's
+// learners to a learner - without ids -, "only own" the own row. Alpha and
+// Beta share a group of the course: with separate groups they see each other
+// in the group's ranking whatever the stored setting says (local_adele #12).
 test.describe('ADELE-E2E-P1/P2 — "Participant results" taken back from "all" to "only own"', () => {
   test('the other learner disappears from page and server; own data and the teacher stay; back to "all"',
     { tag: ['@story:P1', '@story:P2', '@withdrawal'] }, async ({ page, browser }) => {
@@ -634,5 +637,25 @@ test.describe('ADELE-E2E-P1/P2 — "Participant results" taken back from "all" t
         await loginAs(page, fixture('ADELE_FIXTURE_P_OUTSIDER'), fixturePassword());
         expect(await rosterThroughSwitchable(page)).toBe('denied (nopermissions)');
       });
+
+      await test.step('with groups the setting is hidden and has no effect: "only own" stored, the group ranking shows both',
+        async () => {
+          await loginAs(page, env.adminUser, env.adminPassword);
+          await editEmbedding(page, cmid, { results: RESULTS_OWN, expectResultsShown: true });
+          expect(storedEmbedding(cmid).userlist).toBe(2);
+          await editEmbedding(page, cmid, { groupMode: 'Separate groups', expectResultsShown: false });
+          expect(storedEmbedding(cmid).userlist, 'the stored value stays').toBe(2);
+          drainTaskQueue();
+          await loginAs(page, alpha, fixturePassword());
+          // The group's ranking shows both, the participant list the own row.
+          expect(await shownLearners(page)).toBe(`${ALPHA}, ${BETA}`);
+          expect(await rosterThroughSwitchable(page)).toBe(`${ALPHA}, ${BETA}`);
+          expect(learnersIn(await participantList(page)), 'the participant list: the own row').toBe(ALPHA);
+          // Back without groups: the field is there again, and "only own" holds.
+          await loginAs(page, env.adminUser, env.adminPassword);
+          await editEmbedding(page, cmid, { groupMode: 'No groups', expectResultsShown: true });
+          await loginAs(page, alpha, fixturePassword());
+          expect(await shownLearners(page)).toBe(ALPHA);
+        });
     });
 });

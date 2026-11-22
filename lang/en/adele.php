@@ -91,6 +91,7 @@ $string['mform_select_hostenrolmentmode_help'] = 'Only relevant for the particip
 $string['mform_select_learningpath'] = 'Chosen Learning Path';
 $string['mform_select_participantslist'] = 'Learning path enrolment';
 $string['mform_select_userlist'] = 'Participant results';
+$string['mform_select_userlist_help'] = 'Applies to activities without groups; with separate or visible groups this setting is hidden and has no effect - learners then see the ranking of their own group(s) (visible groups: also the group averages). Without groups, "Results of all other participants" shows learners the ranking of this activity\'s learners (name, progress, rank; nobody\'s path can be opened); "Only own results" shows them only their own row. Teachers are not affected.';
 $string['mform_select_view'] = 'Display learning path';
 $string['mod/adele:seelearningpath'] = 'Can see learning paths';
 $string['modulename'] = 'Learning path';

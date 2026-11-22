@@ -191,6 +191,10 @@ export interface EmbeddingChange {
   addSources?: string[];
   removeSources?: string[];
   results?: string;
+  /** The group mode's label, e.g. "Separate groups" (common module settings). */
+  groupMode?: string;
+  /** Whether "Participant results" must be shown once the change is made, checked before saving. */
+  expectResultsShown?: boolean;
 }
 
 /**
@@ -216,6 +220,19 @@ export async function editEmbedding(page: Page, cmid: string, change: EmbeddingC
   }
   if (change.results) {
     await page.getByRole('combobox', { name: 'Participant results', exact: true }).selectOption({ label: change.results });
+  }
+  if (change.groupMode) {
+    // In the collapsed section "Common module settings".
+    const expand = page.getByRole('button', { name: /Expand all|Alle aufklappen/i });
+    if (await expand.isVisible()) {
+      await expand.click();
+    }
+    await page.getByRole('combobox', { name: /^(Group mode|Gruppenmodus)$/ }).selectOption({ label: change.groupMode });
+  }
+  if (change.expectResultsShown !== undefined) {
+    // "Participant results" is shown without groups only (decision 2026-11-22).
+    const field = page.getByRole('combobox', { name: 'Participant results', exact: true });
+    await (change.expectResultsShown ? expect(field).toBeVisible() : expect(field).toBeHidden());
   }
   await page.getByRole('button', { name: /Save and return to course|Speichern und zum Kurs/i }).click();
   // Saved: Moodle leaves the form for the course page. A validation error
