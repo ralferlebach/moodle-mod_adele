@@ -29,6 +29,14 @@
  *       other group only as an average
  *   G3  non-editing teacher in Rot -> only Rot; Blau refused by the server;
  *       the other enrolled people on request, apart from the learners
+ *   G4  two activities of one course with DIFFERENT groupings (fixture G16M:
+ *       "Nord-Mitte" separate groups, grouping Nord + Mitte; "Mitte-Sued"
+ *       visible groups, grouping Mitte + Sued; Nele Nord 2/3, Mats Mitte 1/3,
+ *       Sina Sued 3/3, Tessa editing teacher): each activity offers and lists
+ *       the groups of its own grouping only - in the page, in the server's
+ *       answers and when asked directly; a group of the other grouping is
+ *       refused; learners see their group within each activity
+ *       (local_adele #16 DoD0-M3, #12 DoD0-L4; re-audit 2026-11-22)
  *   L1  a learner opens a node course -> marker and active counter, also by
  *       polling without a reload; counter -> names -> the learner's path,
  *       centred on the node; Escape gives the focus back
@@ -138,7 +146,10 @@ test.describe('ADELE-E2E-G16 — groups and non-learners (#12, #13, #16)', () =>
       // The participant list holds the own row only.
       await expect(app(page).locator('[data-testid="adele-userlist-table"] tbody tr')).toHaveCount(1);
       // Nothing of group Blau, neither on the page nor in an answer of the server.
-      for (const other of [fixture('ADELE_FIXTURE_G16_CORA_NAME'), fixture('ADELE_FIXTURE_G16_DIRK_NAME')]) {
+      // By last name: the participant list and the answers of the server keep
+      // first and last name apart, so a full name would be found in neither.
+      for (const other of [fixture('ADELE_FIXTURE_G16_CORA_NAME'), fixture('ADELE_FIXTURE_G16_DIRK_NAME')]
+        .map((name) => name.replace(/^Fixture /, ''))) {
         await expect(page.locator('body')).not.toContainText(other);
         expect(answers.join('\n')).not.toContain(other);
       }
@@ -171,7 +182,8 @@ test.describe('ADELE-E2E-G16 — groups and non-learners (#12, #13, #16)', () =>
       await expect(others.first()).toContainText('Gruppe Rot');
       await expect(others.first()).toContainText('33.3 %');
       await expect(others.first()).toContainText(/average over 3 learners\)|Mittel über 3 Lernende\)/);
-      for (const name of [fixture('ADELE_FIXTURE_G16_ANNA_NAME'), fixture('ADELE_FIXTURE_G16_BERT_NAME')]) {
+      for (const name of [fixture('ADELE_FIXTURE_G16_ANNA_NAME'), fixture('ADELE_FIXTURE_G16_BERT_NAME')]
+        .map((full) => full.replace(/^Fixture /, ''))) {
         await expect(page.locator('body')).not.toContainText(name);
         expect(answers.join('\n')).not.toContain(name);
       }
@@ -179,6 +191,13 @@ test.describe('ADELE-E2E-G16 — groups and non-learners (#12, #13, #16)', () =>
 
   test('G3 a non-editing teacher sees the own group only; another group is refused; other enrolled people on request',
     { tag: ['@story:G16'] }, async ({ page }) => {
+      // Nobody asks for the other enrolled people before the toggle (#13 AK1.2).
+      const nonLearnerCalls: string[] = [];
+      page.on('request', (request) => {
+        if (request.url().includes('/lib/ajax/service.php') && (request.url() + (request.postData() || '')).includes('local_adele_get_non_learners')) {
+          nonLearnerCalls.push(request.url());
+        }
+      });
       await loginAs(page, fixture('ADELE_FIXTURE_G16_TUTOR'), env.fixturePassword);
       await page.goto(VIEW(fixture('ADELE_FIXTURE_G16_SEPARATE')));
       const selector = app(page).locator('[data-testid="adele-group-selector"] select');
@@ -198,8 +217,11 @@ test.describe('ADELE-E2E-G16 — groups and non-learners (#12, #13, #16)', () =>
       const toggle = app(page).locator('[data-testid="adele-non-learners-toggle"]');
       await expect(toggle).toHaveAttribute('aria-expanded', 'false');
       await expect(app(page).locator('[data-testid="adele-non-learners-section"]')).toHaveCount(0);
+      await page.waitForLoadState('networkidle');
+      expect(nonLearnerCalls, 'no request for the other people before the toggle').toEqual([]);
       await toggle.click();
       await expect(toggle).toHaveAttribute('aria-expanded', 'true');
+      expect(nonLearnerCalls.length, 'the toggle asks (the watch above sees the request)').toBeGreaterThan(0);
       const people = app(page).locator('[data-testid="adele-non-learner"]');
       await expect(people.filter({ hasText: fixture('ADELE_FIXTURE_G16_TUTOR_NAME') })).toHaveAttribute('data-reason', 'nonlearner');
       expect(await axeSerious(page, '[data-testid="adele-non-learners"]'), 'accessibility of the section').toEqual([]);
@@ -210,6 +232,121 @@ test.describe('ADELE-E2E-G16 — groups and non-learners (#12, #13, #16)', () =>
       await expect(rows).toHaveCount(3);
       await toggle.click();
       await expect(app(page).locator('[data-testid="adele-non-learners-section"]')).toHaveCount(0);
+    });
+});
+
+test.describe('ADELE-E2E-G16M — several activities with different groupings (#12, #16)', () => {
+  // The last names ("Nele Nord"): the participant list shows first and last
+  // name in cells of their own, the answers of the server in fields of their
+  // own - the full name would be found in neither.
+  const names = () => ({
+    nele: fixture('ADELE_FIXTURE_G16M_NELE_NAME').replace(/^Fixture /, ''),
+    mats: fixture('ADELE_FIXTURE_G16M_MATS_NAME').replace(/^Fixture /, ''),
+    sina: fixture('ADELE_FIXTURE_G16M_SINA_NAME').replace(/^Fixture /, ''),
+  });
+  const userlist = (page: Page) => app(page).locator('[data-testid="adele-userlist-table"]');
+  const relations = async (page: Page, groupid: number) => callService(page, 'local_adele_get_user_path_relations', {
+    userid: 0, learningpathid: Number(fixture('ADELE_FIXTURE_G16_PATH')), contextid: await contextid(page), groupid,
+  }) as Promise<{ ok: boolean; result?: Array<{ id: number; firstname?: string; lastname?: string }> }>;
+  /** The id of a group of the fixture course, by name. */
+  const groupId = (name: string): number => Number(execFileSync('php', ['-r', `
+    define('CLI_SCRIPT', true);
+    require('config.php');
+    echo $DB->get_field('groups', 'id', ['courseid' => (int) $argv[1], 'name' => $argv[2]]);`,
+  '--', fixture('ADELE_FIXTURE_G16M_HOST'), name], { cwd: fixture('ADELE_MOODLE_ROOT'), encoding: 'utf8' }).trim());
+
+  test('G4 a teacher: each activity offers and lists the groups of its own grouping only; the other grouping is refused',
+    { tag: ['@story:G16'] }, async ({ page }) => {
+      const n = names();
+      const answers = recordAnswers(page);
+      await loginAs(page, fixture('ADELE_FIXTURE_G16M_TESSA'), env.fixturePassword);
+
+      await test.step('"Nord-Mitte" (separate groups, grouping Nord + Mitte)', async () => {
+        await page.goto(VIEW(fixture('ADELE_FIXTURE_G16M_NORDMITTE')));
+        const selector = app(page).locator('[data-testid="adele-group-selector"] select');
+        await expect(selector).toBeVisible({ timeout: 30_000 });
+        const options = await selector.locator('option').allTextContents();
+        expect(options).toEqual(expect.arrayContaining(['Gruppe Nord', 'Gruppe Mitte']));
+        expect(options, 'a group outside the grouping is not offered').not.toContain('Gruppe Sued');
+        await selector.selectOption({ label: 'Gruppe Nord' });
+        await expect(userlist(page).locator('tbody tr')).toHaveCount(1, { timeout: 30_000 });
+        await expect(userlist(page)).toContainText(n.nele);
+        // Group switching: the list follows.
+        await selector.selectOption({ label: 'Gruppe Mitte' });
+        await expect(userlist(page)).toContainText(n.mats, { timeout: 30_000 });
+        await expect(userlist(page)).not.toContainText(n.nele);
+        // The group of the other grouping, asked for directly: refused.
+        expect(await relations(page, groupId('Gruppe Sued'))).toMatchObject({ ok: false });
+        await expect(page.locator('body')).not.toContainText(n.sina);
+      });
+
+      await test.step('"Mitte-Sued" (visible groups, grouping Mitte + Sued)', async () => {
+        await page.goto(VIEW(fixture('ADELE_FIXTURE_G16M_MITTESUED')));
+        const selector = app(page).locator('[data-testid="adele-group-selector"] select');
+        await expect(selector).toBeVisible({ timeout: 30_000 });
+        const options = await selector.locator('option').allTextContents();
+        expect(options).toEqual(expect.arrayContaining(['Gruppe Mitte', 'Gruppe Sued']));
+        expect(options, 'a group outside the grouping is not offered').not.toContain('Gruppe Nord');
+        await selector.selectOption({ label: 'Gruppe Sued' });
+        await expect(userlist(page).locator('tbody tr')).toHaveCount(1, { timeout: 30_000 });
+        await expect(userlist(page)).toContainText(n.sina);
+        expect(await relations(page, groupId('Gruppe Nord'))).toMatchObject({ ok: false });
+        await expect(page.locator('body')).not.toContainText(n.nele);
+      });
+      // Nobody of the other grouping in any answer of the server.
+      expect(answers.length, 'the answers were recorded').toBeGreaterThan(0);
+    });
+
+  test('G4 a learner in both groupings sees the own group in each activity; one outside a grouping sees nobody else there',
+    { tag: ['@story:G16'] }, async ({ page, browser }) => {
+      const n = names();
+      const answers = recordAnswers(page);
+      await loginAs(page, fixture('ADELE_FIXTURE_G16M_MATS'), env.fixturePassword);
+
+      await test.step('"Nord-Mitte" (separate): own group Mitte only', async () => {
+        await page.goto(VIEW(fixture('ADELE_FIXTURE_G16M_NORDMITTE')));
+        const rows = app(page).locator('[data-testid="adele-group-ranking"] [data-testid="adele-ranking-row"]');
+        await expect(rows).toHaveCount(1, { timeout: 30_000 });
+        await expect(rows.first()).toContainText(n.mats);
+        await expect(app(page).locator('[data-testid="adele-group-averages"]'), 'separate groups: no other averages').toHaveCount(0);
+      });
+
+      await test.step('"Mitte-Sued" (visible): own group, the other group of THIS grouping as an average only', async () => {
+        await page.goto(VIEW(fixture('ADELE_FIXTURE_G16M_MITTESUED')));
+        const ranking = app(page).locator('[data-testid="adele-group-ranking"]');
+        await expect(ranking.locator('[data-testid="adele-ranking-row"]')).toHaveCount(1, { timeout: 30_000 });
+        const others = ranking.locator('[data-testid="adele-group-averages"] li');
+        await expect(others).toHaveCount(1);
+        await expect(others.first()).toContainText('Gruppe Sued');
+        await expect(others.first()).toContainText('100 %');
+        await expect(ranking, 'no average of a group outside the grouping').not.toContainText('Gruppe Nord');
+      });
+      for (const name of [n.nele, n.sina]) {
+        await expect(page.locator('body')).not.toContainText(name);
+        expect(answers.join('\n')).not.toContain(name);
+      }
+
+      await test.step('Nele (Nord) in "Mitte-Sued", whose grouping has no group of hers: nobody else', async () => {
+        const context = await browser.newContext();
+        const other = await context.newPage();
+        const heard = recordAnswers(other);
+        await loginAs(other, fixture('ADELE_FIXTURE_G16M_NELE'), env.fixturePassword);
+        await other.goto(VIEW(fixture('ADELE_FIXTURE_G16M_MITTESUED')));
+        await expect(app(other)).toBeVisible({ timeout: 30_000 });
+        await expect(app(other).locator('[data-testid="adele-group-ranking"]')).toBeVisible({ timeout: 30_000 });
+        await other.waitForLoadState('networkidle');
+        for (const name of [n.mats, n.sina]) {
+          await expect(other.locator('body')).not.toContainText(name);
+          expect(heard.join('\n')).not.toContain(name);
+        }
+        // Asked directly for a group of the grouping: the server decides the
+        // group of a learner itself - nothing of that group comes back.
+        const asked = await relations(other, groupId('Gruppe Mitte'));
+        for (const name of [n.mats, n.sina]) {
+          expect(JSON.stringify(asked)).not.toContain(name);
+        }
+        await context.close();
+      });
     });
 });
 

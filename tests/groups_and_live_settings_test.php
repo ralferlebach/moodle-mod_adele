@@ -224,6 +224,78 @@ final class groups_and_live_settings_test extends \advanced_testcase {
     }
 
     /**
+     * The form of an activity of the test course.
+     *
+     * @param \stdClass $activity
+     * @return \MoodleQuickForm
+     */
+    private function form_of(\stdClass $activity): \MoodleQuickForm {
+        global $CFG, $DB, $PAGE;
+        require_once($CFG->dirroot . '/course/modlib.php');
+        require_once($CFG->dirroot . '/mod/adele/mod_form.php');
+        // From the database: get_course() would hand back the global $COURSE of
+        // the previous form, with the group mode settings of before.
+        $course = $DB->get_record('course', ['id' => $this->course->id], '*', MUST_EXIST);
+        [$cm, $context, $module, $data, $cw] = get_moduleinfo_data(get_coursemodule_from_id('adele', $activity->cmid), $course);
+        // A fresh page per form: the course (and with it $COURSE) can be set once only.
+        $PAGE = new \moodle_page();
+        $PAGE->set_course($course);
+        $form = new \mod_adele_mod_form($data, $cw->section, $cm, $course);
+        $form->set_data($data);
+        return (new \ReflectionProperty(\moodleform::class, '_form'))->getValue($form);
+    }
+
+    /**
+     * "Participant results" (userlist) applies without groups only (decision
+     * 2026-11-22; #16 AK0-M6, re-audit 2026-11-22): the field hides with a
+     * group mode, it is gone when the course forces one, it is there when the
+     * course forces "no groups"; the stored value survives every change of
+     * the group mode and takes effect again without groups.
+     */
+    public function test_participant_results_field_follows_the_group_mode(): void {
+        global $COURSE, $DB;
+        $activity = $this->activity(['userlist' => 2]);
+        $learner = $this->getDataGenerator()->create_and_enrol($this->course, 'student');
+
+        // Group mode chosen per activity: the field is there, hidden while a group mode is chosen.
+        $mform = $this->form_of($activity);
+        $this->assertSame('select', $mform->getElement('userlist')->getType());
+        $hideifs = (new \ReflectionProperty(\MoodleQuickForm::class, '_hideifs'))->getValue($mform);
+        $this->assertContains('userlist', $hideifs['groupmode']['neq'][NOGROUPS] ?? [], 'hidden unless "No groups"');
+        $this->assertEquals([2], $mform->getElement('userlist')->getValue());
+
+        // The course forces separate groups: no field, the stored value is kept as it is.
+        $DB->update_record('course', (object) ['id' => $this->course->id, 'groupmode' => SEPARATEGROUPS, 'groupmodeforce' => 1]);
+        rebuild_course_cache($this->course->id, true);
+        $mform = $this->form_of($activity);
+        $this->assertSame('hidden', $mform->getElement('userlist')->getType());
+        $this->assertEquals(2, $mform->getElement('userlist')->getValue());
+
+        // The course forces "no groups": the field is there and not hidden.
+        $DB->update_record('course', (object) ['id' => $this->course->id, 'groupmode' => NOGROUPS, 'groupmodeforce' => 1]);
+        rebuild_course_cache($this->course->id, true);
+        $mform = $this->form_of($activity);
+        $this->assertSame('select', $mform->getElement('userlist')->getType());
+        $hideifs = (new \ReflectionProperty(\MoodleQuickForm::class, '_hideifs'))->getValue($mform);
+        $this->assertArrayNotHasKey('groupmode', $hideifs);
+
+        // Separate groups and back to none: the stored value is untouched and in effect again.
+        $DB->update_record('course', (object) ['id' => $this->course->id, 'groupmode' => NOGROUPS, 'groupmodeforce' => 0]);
+        // The forms above left the course of "forced" in $COURSE, which core's
+        // group functions reuse; a request starts with the course as stored.
+        $COURSE = $DB->get_record('course', ['id' => $this->course->id]);
+        set_coursemodule_groupmode($activity->cmid, SEPARATEGROUPS);
+        rebuild_course_cache($this->course->id, true);
+        $contract = \mod_adele\local\context_contract::for_cm((int) $activity->cmid, (int) $learner->id);
+        $this->assertSame(2, (int) $contract['userlist'], 'stored value kept');
+        $this->assertFalse(\local_adele\cohort::own_results_only($contract), 'with groups: not in effect');
+        set_coursemodule_groupmode($activity->cmid, NOGROUPS);
+        rebuild_course_cache($this->course->id, true);
+        $contract = \mod_adele\local\context_contract::for_cm((int) $activity->cmid, (int) $learner->id);
+        $this->assertTrue(\local_adele\cohort::own_results_only($contract), 'without groups: in effect again');
+    }
+
+    /**
      * Duplicate and import keep the settings and the group mode; an older backup gets the defaults (AK2-M3, AK0-M6).
      */
     public function test_backup_restore_duplicate(): void {
@@ -231,12 +303,13 @@ final class groups_and_live_settings_test extends \advanced_testcase {
         $gen = $this->getDataGenerator();
         $grouping = $gen->create_grouping(['courseid' => $this->course->id]);
         $activity = $this->activity(['livemarkers' => 1, 'livewindow' => 12, 'groupmode' => VISIBLEGROUPS,
-            'groupingid' => $grouping->id]);
+            'groupingid' => $grouping->id, 'userlist' => 2]);
 
         $copy = duplicate_module($this->course, get_coursemodule_from_id('adele', $activity->cmid));
         $record = $DB->get_record('adele', ['id' => $copy->instance]);
         $this->assertSame([1, 12], [(int) $record->livemarkers, (int) $record->livewindow]);
         $this->assertSame(VISIBLEGROUPS, (int) get_coursemodule_from_id('adele', $copy->id)->groupmode);
+        $this->assertSame(2, (int) $record->userlist, 'the stored "participant results" travels along (AK0-M6)');
 
         foreach ([false, true] as $older) {
             $bc = new \backup_controller(
@@ -269,6 +342,9 @@ final class groups_and_live_settings_test extends \advanced_testcase {
             $rc->execute_plan();
             $rc->destroy();
             $restored = $DB->get_record('adele', ['course' => $target->id], '*', MUST_EXIST);
+            $this->assertSame(2, (int) $restored->userlist, 'the stored "participant results" travels along (AK0-M6)');
+            $restoredcm = get_coursemodule_from_instance('adele', $restored->id, $target->id);
+            $this->assertSame(VISIBLEGROUPS, (int) $restoredcm->groupmode, 'and the group mode');
             $this->assertSame(
                 $older ? [0, 5] : [1, 12],
                 [(int) $restored->livemarkers, (int) $restored->livewindow],

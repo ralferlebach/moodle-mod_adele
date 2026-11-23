@@ -256,6 +256,17 @@ test.describe('ADELE-E2E-P — learner data in a course that embeds a path', () 
         expect(beta!.id, "no user id of Beta").toBeLessThan(0);
         expect(beta!.username, 'no username of Beta').toBe('');
         expect((answer.data as { id: number }[]).map((row) => row.id), "Beta's id nowhere").not.toContain(userId('B'));
+        // Not navigable: no link or button in any row (re-audit 2026-11-22).
+        expect(await page.locator('[data-testid="adele-userlist-table"] tbody tr').count()).toBeGreaterThanOrEqual(2);
+        await expect(page.locator('[data-testid="adele-userlist-table"] tbody').locator('a, button, [role="link"]'))
+          .toHaveCount(0);
+        // The masked id of Beta's row opens nothing either.
+        const path = await callService(page, 'local_adele_get_user_path_relation', {
+          learningpathid: pathId(),
+          userpathid: beta!.id,
+          contextid: contextId('CM_ALL'),
+        });
+        expect(JSON.stringify(path), "Beta's path through the masked id").not.toContain(BETA);
       });
 
     await test.step('the teacher sees both in either embedding, with a way into the detail view', async () => {
