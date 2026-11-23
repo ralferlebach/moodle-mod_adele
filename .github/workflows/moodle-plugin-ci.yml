@@ -30,7 +30,14 @@ jobs:
       # to install with "Dependencies check failed" - before a single test
       # runs. If that happens, the branches here are ahead of upstream, not
       # the code broken.
+      # The first line works around moodle-plugin-ci 4.5.12 (symfony/filesystem
+      # 5.4.56): its copies keep the source's file mode, so the read-only git
+      # objects of the checkout stay read-only in Moodle and in grunt's backup,
+      # and grunt's restore fails on them ("Failed to copy .../.git/objects/
+      # pack/... Permission denied", run 2026-11-23). These lines run before
+      # "moodle-plugin-ci install" copies the checkout.
       extra_plugin_runners: |
+        chmod -R u+w "$GITHUB_WORKSPACE/plugin/.git"
         moodle-plugin-ci add-plugin --branch main Wunderbyte-GmbH/moodle-local_wunderbyte_table
         OWNER="${{ github.event.pull_request.head.repo.owner.login || github.repository_owner }}"; REF="${{ github.head_ref || github.ref_name }}"; for sib in local enrol; do url="https://github.com/$OWNER/moodle-${sib}_adele.git"; br=main; git ls-remote --exit-code --heads "$url" "$REF" >/dev/null 2>&1 && br="$REF"; echo "companion ${sib}_adele: $OWNER@$br"; moodle-plugin-ci add-plugin --branch "$br" "$OWNER/moodle-${sib}_adele"; done
 
