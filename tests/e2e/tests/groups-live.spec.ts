@@ -37,6 +37,12 @@
  *       answers and when asked directly; a group of the other grouping is
  *       refused; learners see their group within each activity
  *       (local_adele #16 DoD0-M3, #12 DoD0-L4; re-audit 2026-11-22)
+ *   G5  the other enrolled people (#13 DoD1.2-1.4, re-audit 2026-11-26), Tessa
+ *       in "Nord-Mitte" (Theo, non-editing teacher in Mitte): the list follows
+ *       the group chosen while it is open;
+ *       a failed answer shows the error and the next opening loads again; the
+ *       ranking stays as it is; a learner asking the server directly is
+ *       refused - whatever the toggle in the page
  *   L1  a learner opens a node course -> marker and active counter, also by
  *       polling without a reload; counter -> names -> the learner's path,
  *       centred on the node; Escape gives the focus back
@@ -297,6 +303,77 @@ test.describe('ADELE-E2E-G16M — several activities with different groupings (#
       expect(answers.length, 'the answers were recorded').toBeGreaterThan(0);
     });
 
+  test('G5 the other enrolled people: follow the group, show an error and load again, change no ranking; the server refuses a learner',
+    { tag: ['@story:G16'] }, async ({ page, browser }) => {
+      const n = names();
+      await loginAs(page, fixture('ADELE_FIXTURE_G16M_TESSA'), env.fixturePassword);
+      await page.goto(VIEW(fixture('ADELE_FIXTURE_G16M_NORDMITTE')));
+      const selector = app(page).locator('[data-testid="adele-group-selector"] select');
+      await expect(selector).toBeVisible({ timeout: 30_000 });
+      await selector.selectOption({ label: 'Gruppe Nord' });
+      await expect(userlist(page).locator('tbody tr')).toHaveCount(1, { timeout: 30_000 });
+      const toggle = app(page).locator('[data-testid="adele-non-learners-toggle"]');
+      const section = app(page).locator('[data-testid="adele-non-learners-section"]');
+      const people = app(page).locator('[data-testid="adele-non-learner"]');
+      const tessa = fixture('ADELE_FIXTURE_G16M_TESSA_NAME');
+
+      await test.step('a failed answer: the error, and the next opening loads again', async () => {
+        const fail = async (route: import('@playwright/test').Route) => {
+          if ((route.request().postData() || '').includes('local_adele_get_non_learners')) {
+            await route.abort('failed');
+          } else {
+            await route.fallback();
+          }
+        };
+        await page.route('**/lib/ajax/service.php*', fail);
+        await toggle.click();
+        await expect(section).toContainText(/(The list could not be loaded|Die Liste konnte nicht geladen werden)/, { timeout: 30_000 });
+        await expect(people).toHaveCount(0);
+        await page.unroute('**/lib/ajax/service.php*', fail);
+        await toggle.click();
+        await expect(section).toHaveCount(0);
+        await toggle.click();
+        await expect(section).not.toContainText(/(The list could not be loaded|Die Liste konnte nicht geladen werden)/, { timeout: 30_000 });
+      });
+
+      await test.step('open while the group changes: the list follows, the ranking stays', async () => {
+        // Theo teaches in Mitte; Tessa is in no group, so outside the
+        // grouping of this activity - not listed even for all participants
+        // (#13 AK1.6).
+        const theo = fixture('ADELE_FIXTURE_G16M_THEO_NAME');
+        await expect(people.filter({ hasText: theo }), 'group Nord: not Theo').toHaveCount(0);
+        const before = await userlist(page).locator('tbody tr').count();
+        await selector.selectOption({ label: 'Gruppe Mitte' });
+        await expect(people.filter({ hasText: theo }), 'group Mitte: Theo, while the list stays open')
+          .toHaveAttribute('data-reason', 'nonlearner', { timeout: 30_000 });
+        await expect(userlist(page)).toContainText(n.mats, { timeout: 30_000 });
+        // "All participants" (offered: Tessa may see all groups).
+        await selector.selectOption({ value: '0' });
+        await expect(people.filter({ hasText: theo })).toHaveCount(1, { timeout: 30_000 });
+        await expect(people.filter({ hasText: tessa }), 'outside the grouping').toHaveCount(0);
+        for (const name of [n.nele, n.mats, n.sina]) {
+          await expect(people.filter({ hasText: name }), 'no learner among the others').toHaveCount(0);
+        }
+        await selector.selectOption({ label: 'Gruppe Nord' });
+        await expect(people.filter({ hasText: theo })).toHaveCount(0, { timeout: 30_000 });
+        await expect(userlist(page).locator('tbody tr'), 'the ranking as before').toHaveCount(before);
+        expect(await axeSerious(page, '[data-testid="adele-non-learners"]'), 'accessibility of the section').toEqual([]);
+      });
+
+      await test.step('the server decides, not the toggle: a learner asking directly is refused', async () => {
+        const context = await browser.newContext();
+        const learner = await context.newPage();
+        await loginAs(learner, fixture('ADELE_FIXTURE_G16M_MATS'), env.fixturePassword);
+        await learner.goto(VIEW(fixture('ADELE_FIXTURE_G16M_NORDMITTE')));
+        await expect(app(learner)).toBeVisible({ timeout: 30_000 });
+        await expect(app(learner).locator('[data-testid="adele-non-learners-toggle"]')).toHaveCount(0);
+        const asked = await callService(learner, 'local_adele_get_non_learners', { contextid: await contextid(learner), groupid: 0 });
+        expect(asked).toMatchObject({ ok: false });
+        expect(JSON.stringify(asked)).not.toContain(tessa.replace(/^Fixture /, ''));
+        await context.close();
+      });
+    });
+
   test('G4 a learner in both groupings sees the own group in each activity; one outside a grouping sees nobody else there',
     { tag: ['@story:G16'] }, async ({ page, browser }) => {
       const n = names();
@@ -409,11 +486,22 @@ function resetFixture(): void {
  */
 async function openLiveSection(page: Page): Promise<void> {
   await page.waitForLoadState('load');
-  // Moodle may open the section by itself (a field with a value set); click only when closed.
-  if (!(await page.locator('#id_livemarkers').isVisible())) {
-    await page.locator('#id_livemarkersheader .ftoggler a, #id_livemarkersheader a[data-toggle="collapse"], ' +
-      '#id_livemarkersheader a[data-bs-toggle="collapse"]').first().click();
+  // Decide only once Moodle's form JavaScript has finished (M.util.pending_js
+  // empty, what Behat waits for): before that the section can still change
+  // its state, and a click decided on the state before toggled it shut (M1,
+  // red once in the local stand of 2026-11-26). Then by the toggle's own
+  // aria-expanded, not by the field's visibility, which lags behind the
+  // collapse animation.
+  await page.waitForFunction(() => {
+    const m = (window as unknown as { M?: { util?: { pending_js?: unknown[] } } }).M;
+    return !!m && !!m.util && Array.isArray(m.util.pending_js) && m.util.pending_js.length === 0;
+  }, undefined, { timeout: 30_000 });
+  const toggle = page.locator('#id_livemarkersheader .ftoggler a, #id_livemarkersheader a[data-toggle="collapse"], ' +
+    '#id_livemarkersheader a[data-bs-toggle="collapse"]').first();
+  if ((await toggle.getAttribute('aria-expanded')) !== 'true') {
+    await toggle.click();
   }
+  await expect(toggle).toHaveAttribute('aria-expanded', 'true');
   await expect(page.locator('#id_livemarkers')).toBeVisible();
 }
 
