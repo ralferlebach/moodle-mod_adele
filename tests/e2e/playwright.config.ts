@@ -64,7 +64,7 @@ export default defineConfig({
     // expanded stacked courses. Only where Firefox is installed - the E2E
     // workflow installs it and sets ADELE_E2E_FIREFOX.
     ...(process.env.ADELE_E2E_FIREFOX
-      ? [{ name: 'firefox', use: { ...devices['Desktop Firefox'] }, grep: /@story:(R26|F27|S17)\b/ }]
+      ? [{ name: 'firefox', use: { ...devices['Desktop Firefox'] }, grep: /@story:(R26|F27|S17|A18)\b/ }]
       : []),
   ],
 });

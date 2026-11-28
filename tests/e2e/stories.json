@@ -54,5 +54,9 @@
     "K18",
     "F27"
   ],
-  "withdrawalNote": "Stories that are reversible: each needs a passed test tagged @withdrawal that takes the setting back (E2E issue, addendum of 2026-10-13)."
+  "withdrawalNote": "Stories that are reversible: each needs a passed test tagged @withdrawal that takes the setting back (E2E issue, addendum of 2026-10-13).",
+  "alsoCovered": [
+    "A18"
+  ],
+  "alsoCoveredNote": "Stories of other plugins that tests here cover as well: A18 (local_adele #18, DOM ids) - two instances of the same dialog in one application (DoD3, re-audit 2026-11-28); the Firefox project runs them."
 }

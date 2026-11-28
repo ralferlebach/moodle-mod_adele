@@ -46,6 +46,17 @@
  *   L1  a learner opens a node course -> marker and active counter, also by
  *       polling without a reload; counter -> names -> the learner's path,
  *       centred on the node; Escape gives the focus back
+ *   L3  the way back from a learner: group, viewport, scroll and focus kept
+ *   L4  one learner in two node courses (test-only enrolment, real course
+ *       views): active marker on both nodes, avatar, name and state of the
+ *       right learner, nobody never seen marked; the activity put back
+ *       behind the window (test clock: the data moves, not the rules) ->
+ *       polling, no reload: no active marker, the inactive one on the last
+ *       node only (#14 DoD2-L4, re-audit 2026-11-28)
+ *   D1  the lists of two nodes open at once - two instances of one dialog
+ *       type in one application: ids unique, references in their own
+ *       instance, Escape in one leaves the other open (#18 DoD3; also in
+ *       Firefox)
  *   L2  live markers off -> no active counter, the completed counter stays
  *   M1  activity settings: off / 5 by default, 61 refused, saved and shown again
  *
@@ -474,9 +485,61 @@ function resetFixture(): void {
     foreach ([[(int) $argv[2], 1], [(int) $argv[3], 0]] as [$cmid, $on]) {
         $instance = $DB->get_field('course_modules', 'instance', ['id' => $cmid]);
         $DB->update_record('adele', (object) ['id' => $instance, 'livemarkers' => $on, 'livewindow' => 5]);
+    }
+    // L4 enrols Dirk in the course of node 2 as well: take that back.
+    $dirk = $DB->get_field('user', 'id', ['username' => 'fx_g_dirk']);
+    $manual = enrol_get_plugin('manual');
+    $instance = $DB->get_record('enrol', ['courseid' => (int) $argv[4], 'enrol' => 'manual'], '*', IGNORE_MULTIPLE);
+    if ($dirk && $manual && $instance && $DB->record_exists('user_enrolments', ['enrolid' => $instance->id, 'userid' => $dirk])) {
+        $manual->unenrol_user($instance, $dirk);
     }`;
   execFileSync('php', ['-r', script, '--', fixture('ADELE_FIXTURE_G16_PATH'), fixture('ADELE_FIXTURE_G16_SEPARATE'),
-    fixture('ADELE_FIXTURE_G16_VISIBLE')], { cwd: fixture('ADELE_MOODLE_ROOT'), encoding: 'utf8' });
+    fixture('ADELE_FIXTURE_G16_VISIBLE'), fixture('ADELE_FIXTURE_COURSE_T02')],
+  { cwd: fixture('ADELE_MOODLE_ROOT'), encoding: 'utf8' });
+}
+
+/**
+ * Test-only set-up for L4: enrol a learner (manual, student) in a course.
+ * Only the enrolment is made here - the activity comes from the learner
+ * opening the course in the browser.
+ *
+ * @param username The learner.
+ * @param courseid The course.
+ */
+function enrolForTest(username: string, courseid: string): void {
+  const script = `
+    define('CLI_SCRIPT', true);
+    require('config.php');
+    $userid = $DB->get_field('user', 'id', ['username' => $argv[1]], MUST_EXIST);
+    $instance = $DB->get_record('enrol', ['courseid' => (int) $argv[2], 'enrol' => 'manual'], '*', MUST_EXIST);
+    enrol_get_plugin('manual')->enrol_user($instance, $userid, $DB->get_field('role', 'id', ['shortname' => 'student']));`;
+  execFileSync('php', ['-r', script, '--', username, courseid], { cwd: fixture('ADELE_MOODLE_ROOT'), encoding: 'utf8' });
+}
+
+/**
+ * Test clock for L4: put the recorded activity of a learner in a course
+ * back to a point in time "seconds ago". This moves the data, not the
+ * logic: the server still decides with its own clock and the activity's
+ * own window (here 5 minutes) - a controlled expiry without waiting five
+ * minutes and without touching authorisation or the activity rules.
+ *
+ * @param username The learner.
+ * @param courseid The course.
+ * @param secondsago How long ago the learner was last seen there.
+ * @return The number of activity rows moved (1 when the learner was seen there).
+ */
+function seenAgo(username: string, courseid: string, secondsago: number): number {
+  const script = `
+    define('CLI_SCRIPT', true);
+    require('config.php');
+    $userid = $DB->get_field('user', 'id', ['username' => $argv[1]], MUST_EXIST);
+    $rows = $DB->get_records('local_adele_activity', ['userid' => $userid, 'courseid' => (int) $argv[2]]);
+    foreach ($rows as $row) {
+        $DB->set_field('local_adele_activity', 'timeseen', time() - (int) $argv[3], ['id' => $row->id]);
+    }
+    echo count($rows);`;
+  return Number(execFileSync('php', ['-r', script, '--', username, courseid, String(secondsago)],
+    { cwd: fixture('ADELE_MOODLE_ROOT'), encoding: 'utf8' }).trim());
 }
 
 /**
@@ -622,6 +685,157 @@ test.describe('ADELE-E2E-L17 — live markers and node counters (#14, #15, #17)'
         await back();
         await expect.poll(state, { timeout: 10_000 }).toEqual(before);
         await expect(live.locator('[data-testid="adele-counter-active-dndnode_1"]')).toBeFocused({ timeout: 10_000 });
+      });
+    });
+
+  test('L4 one learner in two node courses: active on both nodes; the window runs out: only the last node keeps an inactive marker (#14 DoD2-L4)',
+    { tag: ['@story:L17'] }, async ({ page, browser }) => {
+      test.setTimeout(300_000);
+      const dirkname = fixture('ADELE_FIXTURE_G16_DIRK_NAME');
+      const dirk = fixture('ADELE_FIXTURE_G16_DIRK');
+      enrolForTest(dirk, fixture('ADELE_FIXTURE_COURSE_T02'));
+      // Real events: Dirk opens the course of node 1, then the course of node 2.
+      await learnerOpensCourse(browser, dirk, fixture('ADELE_FIXTURE_COURSE_T01'));
+      await learnerOpensCourse(browser, dirk, fixture('ADELE_FIXTURE_COURSE_T02'));
+      await loginAsAdmin(page);
+      await page.goto(VIEW(fixture('ADELE_FIXTURE_G16_SEPARATE')));
+      const node1 = app(page).locator('[data-testid="adele-node-live-dndnode_1"]');
+      const node2 = app(page).locator('[data-testid="adele-node-live-dndnode_2"]');
+      const node3 = app(page).locator('[data-testid="adele-node-live-dndnode_3"]');
+      await expect(node1).toBeVisible({ timeout: 30_000 });
+      const on = (node: typeof node1) => node.locator('.adele-marker').filter({ hasText: dirkname });
+
+      await test.step('active on both nodes at once - avatar, name and state of the right learner, no inactive marker', async () => {
+        for (const node of [node1, node2]) {
+          const marker = on(node);
+          await expect(marker).toHaveCount(1);
+          await expect(marker).toHaveAttribute('data-state', 'active');
+          await expect(marker).toHaveAttribute('aria-label', new RegExp(`${dirkname}.*(active now|gerade aktiv)`));
+          await expect(marker.locator('.adele-marker-name')).toHaveText(dirkname);
+          await expect(marker.locator('.sr-only')).toHaveText(/active now|gerade aktiv/);
+          const avatar = marker.locator('img.adele-marker-avatar');
+          await expect(avatar).toHaveAttribute('alt', '');
+          await expect(avatar).toHaveAttribute('src', /\/(pluginfile\.php|theme\/image\.php)\//);
+          await expect.poll(() => avatar.evaluate((img) => (img as HTMLImageElement).complete
+            && (img as HTMLImageElement).naturalWidth > 0), { message: 'the avatar is loaded' }).toBe(true);
+        }
+        await expect(on(node3)).toHaveCount(0);
+        await expect(app(page).locator('.adele-marker[data-state="inactive"]').filter({ hasText: dirkname })).toHaveCount(0);
+        await expect(node1.locator('[data-testid="adele-counter-active-dndnode_1"]')).toHaveText(/^1 /);
+        await expect(node2.locator('[data-testid="adele-counter-active-dndnode_2"]')).toHaveText(/^1 /);
+      });
+
+      await test.step('never seen: no marker - for the other learners of the group and of the course', async () => {
+        for (const key of ['ANNA', 'BERT', 'CORA', 'NOPATH']) {
+          await expect(app(page).locator('.adele-marker').filter({ hasText: fixture(`ADELE_FIXTURE_G16_${key}_NAME`) }),
+            `${key}: never seen, no marker`).toHaveCount(0);
+        }
+        await expect(app(page).locator('.adele-marker'), 'only Dirk carries markers').toHaveCount(2);
+      });
+
+      await test.step('the window runs out (controlled, distinct times): polling shows it without a reload', async () => {
+        // Node 1's course 20 minutes ago, node 2's course 10 minutes ago: both
+        // outside the window of 5 minutes, node 2 clearly the last one.
+        expect(seenAgo(dirk, fixture('ADELE_FIXTURE_COURSE_T01'), 20 * 60), 'activity in node 1\'s course').toBe(1);
+        expect(seenAgo(dirk, fixture('ADELE_FIXTURE_COURSE_T02'), 10 * 60), 'activity in node 2\'s course').toBe(1);
+        const navigations: string[] = [];
+        page.on('framenavigated', (frame) => {
+          if (frame === page.mainFrame()) {
+            navigations.push(frame.url());
+          }
+        });
+        await expect(app(page).locator('.adele-marker[data-state="active"]'), 'no active marker any more')
+          .toHaveCount(0, { timeout: 90_000 });
+        const last = on(node2);
+        await expect(last).toHaveCount(1);
+        await expect(last).toHaveAttribute('data-state', 'inactive');
+        await expect(last).toHaveAttribute('aria-label', new RegExp(`${dirkname}.*(last seen here|zuletzt hier gesehen)`));
+        await expect(last.locator('.sr-only')).toHaveText(/last seen here|zuletzt hier gesehen/);
+        await expect(last).not.toHaveAttribute('data-ambiguous', /.+/);
+        await expect(last.locator('.adele-marker-name')).toHaveText(dirkname);
+        await expect(last.locator('img.adele-marker-avatar')).toHaveAttribute('alt', '');
+        await expect(on(node1), 'not on the node seen before').toHaveCount(0);
+        await expect(on(node3)).toHaveCount(0);
+        await expect(app(page).locator('.adele-marker'), 'one marker left, the inactive one').toHaveCount(1);
+        await expect(node1.locator('[data-testid="adele-counter-active-dndnode_1"]')).toHaveText(/^0 /);
+        await expect(node2.locator('[data-testid="adele-counter-active-dndnode_2"]')).toHaveText(/^0 /);
+        expect(navigations, 'no reload of the page').toEqual([]);
+        expect(await axeSerious(page, '[data-testid="adele-node-live-dndnode_2"]'), 'accessibility of the inactive marker').toEqual([]);
+      });
+    });
+
+  test('D1 the same dialog twice at once: the lists of two nodes open side by side, each its own ids, references and focus (#18 DoD3)',
+    { tag: ['@story:A18'] }, async ({ page }) => {
+      await loginAsAdmin(page);
+      await page.goto(VIEW(fixture('ADELE_FIXTURE_G16_SEPARATE')));
+      // The list of people at a node's counter is a dialog (NodeLive.vue);
+      // every node has its own, and opening one closes no other: two
+      // instances of one dialog type in one application, by the normal UI.
+      const counter1 = app(page).locator('[data-testid="adele-counter-completed-dndnode_1"]');
+      const counter2 = app(page).locator('[data-testid="adele-counter-completed-dndnode_2"]');
+      await expect(counter1).toHaveText(/^3 /, { timeout: 30_000 });
+      await expect(counter2).toHaveText(/^2 /);
+      await counter1.click();
+      await counter2.click();
+      const dialog1 = page.locator(`[id="${await counter1.getAttribute('aria-controls')}"]`);
+      const dialog2 = page.locator(`[id="${await counter2.getAttribute('aria-controls')}"]`);
+      await expect(dialog1).toBeVisible();
+      await expect(dialog2).toBeVisible();
+      await expect(counter1).toHaveAttribute('aria-expanded', 'true');
+      await expect(counter2).toHaveAttribute('aria-expanded', 'true');
+
+      await test.step('two dialogs of one type, mounted at once - ids unique on the whole page, every reference in its own instance', async () => {
+        await expect(app(page).locator('.adele-live-popover[role="dialog"]')).toHaveCount(2);
+        const facts = await page.evaluate(() => {
+          const seen = new Map<string, number>();
+          document.querySelectorAll('[id]').forEach((el) => seen.set(el.id, (seen.get(el.id) || 0) + 1));
+          const dialogs = [...document.querySelectorAll('.adele-live-popover[role="dialog"]')].map((d) => {
+            const title = document.getElementById(d.getAttribute('aria-labelledby') || '');
+            const opener = document.querySelector(`[aria-controls="${d.id}"]`);
+            const inside = [...d.querySelectorAll('[aria-labelledby], [aria-describedby], [aria-controls], label[for]')]
+              .flatMap((el) => ['aria-labelledby', 'aria-describedby', 'aria-controls', 'for']
+                .flatMap((attr) => (el.getAttribute(attr) || '').split(/\s+/).filter(Boolean)))
+              .map((id) => ({ id, ok: !!document.getElementById(id) && d.contains(document.getElementById(id)) }));
+            return { id: d.id, titleinside: !!title && d.contains(title), openers: opener ? 1 : 0,
+              broken: inside.filter((r) => !r.ok).map((r) => r.id) };
+          });
+          return { duplicates: [...seen].filter(([, n]) => n > 1).map(([id]) => id), dialogs };
+        });
+        expect(facts.duplicates, 'no id twice on the page').toEqual([]);
+        expect(facts.dialogs).toHaveLength(2);
+        expect(facts.dialogs[0].id).not.toBe(facts.dialogs[1].id);
+        for (const d of facts.dialogs) {
+          expect(d.titleinside, `${d.id}: named by its own title`).toBe(true);
+          expect(d.openers, `${d.id}: exactly one opener names it`).toBe(1);
+          expect(d.broken, `${d.id}: every reference stays inside`).toEqual([]);
+        }
+        await expect(dialog1).toHaveAccessibleName(/.+/);
+        await expect(dialog2).toHaveAccessibleName(/.+/);
+        expect(await dialog1.getAttribute('aria-labelledby')).not.toBe(await dialog2.getAttribute('aria-labelledby'));
+      });
+
+      await test.step('each instance shows its own node: 3 and 2 people', async () => {
+        await expect(dialog1.locator('[data-testid="adele-live-person"]')).toHaveCount(3);
+        await expect(dialog2.locator('[data-testid="adele-live-person"]')).toHaveCount(2);
+        await expect(dialog2).not.toContainText(fixture('ADELE_FIXTURE_G16_BERT_NAME'));
+        await expect(dialog1).toContainText(fixture('ADELE_FIXTURE_G16_BERT_NAME'));
+        expect(await axeSerious(page, '[data-testid="adele-node-live-dndnode_1"]'), 'accessibility, node 1').toEqual([]);
+        expect(await axeSerious(page, '[data-testid="adele-node-live-dndnode_2"]'), 'accessibility, node 2').toEqual([]);
+      });
+
+      await test.step('using one instance leaves the other alone: Escape in the second closes it, focus back to its counter', async () => {
+        await dialog2.locator('[data-testid="adele-live-person"]').first().focus();
+        await page.keyboard.press('Escape');
+        await expect(dialog2).toHaveCount(0);
+        await expect(counter2).toBeFocused();
+        await expect(counter2).toHaveAttribute('aria-expanded', 'false');
+        await expect(dialog1, 'the first stays open').toBeVisible();
+        await expect(dialog1.locator('[data-testid="adele-live-person"]')).toHaveCount(3);
+        await expect(counter1).toHaveAttribute('aria-expanded', 'true');
+        await dialog1.locator('[data-testid="adele-live-person"]').first().focus();
+        await page.keyboard.press('Escape');
+        await expect(dialog1).toHaveCount(0);
+        await expect(counter1).toBeFocused();
       });
     });
 
