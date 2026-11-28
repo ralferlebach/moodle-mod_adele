@@ -41,8 +41,12 @@ jobs:
         options: --health-cmd="mysqladmin ping" --health-interval 10s --health-timeout 5s --health-retries 3
       mysql:
         image: mysql:8.4
+        # No MYSQL_USER here: the MySQL 8.4 entrypoint refuses MYSQL_USER="root" ("MYSQL_USER
+        # and MYSQL_PASSWORD are for configuring a regular user and cannot be used for the root
+        # user") and the container never becomes healthy - every job of this gate failed before
+        # its first step (runs 124786856802, 124787005615, 28.11.2026). Moodle connects as root
+        # with the empty password that MYSQL_ALLOW_EMPTY_PASSWORD allows.
         env:
-          MYSQL_USER: 'root'
           MYSQL_ALLOW_EMPTY_PASSWORD: "true"
           MYSQL_CHARACTER_SET_SERVER: "utf8mb4"
           MYSQL_COLLATION_SERVER: "utf8mb4_unicode_ci"
