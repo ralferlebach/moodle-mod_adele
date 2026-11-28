@@ -81,6 +81,14 @@ if ($learningpath->learningpathid && !$DB->record_exists('local_adele_learning_p
     exit;
 }
 
+// Restored from another site, or from a backup whose path no longer exists,
+// the activity has no path (mod_adele #29): say so instead of an empty page.
+if (!$learningpath->learningpathid) {
+    echo $OUTPUT->notification(get_string('learningpathnotset', 'mod_adele'), 'info');
+    echo $OUTPUT->footer();
+    exit;
+}
+
 // Early bail out conditions.
 if (
     isloggedin() &&
@@ -106,6 +114,7 @@ if (
                 'wwwroot' => $CFG->wwwroot,
                 'version' => $CFG->version,
                 'stringsrev' => get_config('local_adele', 'version'),
+                'pathviewsettings' => \local_adele\path_view_settings::for_template(),
                 ]
             );
         } else {
@@ -127,6 +136,7 @@ if (
                 'wwwroot' => $CFG->wwwroot,
                 'version' => $CFG->version,
                 'stringsrev' => get_config('local_adele', 'version'),
+                'pathviewsettings' => \local_adele\path_view_settings::for_template(),
                 ]
             );
         } else {

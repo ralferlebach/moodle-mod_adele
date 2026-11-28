@@ -36,6 +36,7 @@ require_once($CFG->dirroot . '/backup/controller/restore_controller.class.php');
 
 /**
  * Unit test for backup and restore functionality of mod_adele.
+ * @group      adele_release
  */
 final class backup_restore_test extends advanced_testcase {
     /**

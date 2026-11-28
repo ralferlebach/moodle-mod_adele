@@ -35,6 +35,7 @@ use advanced_testcase;
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  * @covers     \restore_adele_activity_structure_step
  * @covers     \adele_delete_instance
+ * @group      adele_release
  */
 final class restore_subscribes_test extends advanced_testcase {
     /**

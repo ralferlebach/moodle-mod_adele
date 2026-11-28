@@ -28,13 +28,6 @@ const ACTIVITY_NAME = 'PW Startnode Teilnehmer Lifecycle';
 // ("für in Startknoten eingeschriebene Personen" / "automatisch (mit vollem
 // Zugriff für Teilnehmende)") and are exactly what the specification quotes;
 // which of the two the interface shows depends on the site language.
-// How Moodle marks a suspended enrolment in the participants table: a warning
-// badge in the status column. Verified against the rendered page rather than
-// assumed — an earlier version looked for .dimmed_text, which this table does
-// not use, and the test then reported "not suspended" for an enrolment that
-// was correctly suspended.
-const SUSPENDED_BADGE = '.badge.bg-warning';
-
 const PARTICIPANTS_STARTING_NODES = 'for people enrolled in a starting node';
 const HOST_MODE_VISIBLE = 'automatic (with full access for participants)';
 
@@ -135,9 +128,11 @@ test.describe('ADELE-PW-MOD-01 — starting node host enrolment lifecycle', () =
     const activeRow = page.locator(
       `#participantsform tbody tr:has-text("${env.startUser01}@example.invalid")`
     );
-    // Suspended enrolments carry a dimmed status badge; core marks the row
-    // with a class rather than only a translated word.
-    await expect(activeRow.locator('.dimmed_text')).toHaveCount(0);
+    // Moodle marks a suspended enrolment in the status column with a warning
+    // badge (verified against the rendered page; the table uses no
+    // .dimmed_text, so a check for that class could never fail).
+    await expect(activeRow).toHaveCount(1);
+    await expect(activeRow.locator('.badge.bg-warning')).toHaveCount(0);
 
     // --- Phase C: delete the activity through the interface ---------------
     await page.goto(env.lifecycleHostCourseUrl);
@@ -170,30 +165,21 @@ test.describe('ADELE-PW-MOD-01 — starting node host enrolment lifecycle', () =
     // task run.
     runAdhocTasks();
 
-    // --- Phase D: the automatic host access is withdrawn ------------------
+    // --- Phase D: the automatic host access is gone -----------------------
     //
-    // WITHDRAWN, not deleted — and the difference is deliberate product
-    // behaviour, not a shortcoming of this test.
-    //
-    // enrol_adele suspends an enrolment that has lost its justification
-    // instead of removing it, so that reports, certificates and grades keep
-    // working. Moodle lists suspended participants, marked as suspended, for
-    // the configured retention period (enrol_adele/suspendedretention,
-    // 90 days by default); only afterwards are they removed. That semantics
-    // was decided in enrol_adele issue #7.
-    //
-    // The test therefore asserts what the product promises: the row may still
-    // be there, but the access is gone. Asserting a row count of zero would
-    // demand behaviour the system deliberately does not have, and would fail
-    // for a correct implementation.
+    // REMOVED, not suspended. Deleting the activity removes the embedding
+    // itself, and with it every reason for the host enrolments it made:
+    // since 2026100735 enrol_adele takes them out at once (enrol_adele #7,
+    // withdrawn_settings_test::test_deleted_embedding_is_cleanly_gone; E2E
+    // H1 "an embedding deleted is cleanly gone"). The retention period of
+    // enrol_adele/suspendedretention is for a person who LEFT a still
+    // existing embedding, not for a deleted one. An earlier version of this
+    // test asserted the suspension and went red against the correct
+    // behaviour (CI 2026-11-19).
     for (const username of [env.startUser01, env.startUser02]) {
       expect(
-        await suspendedParticipantRows(page, env.lifecycleHostCourseId, username),
-        `${username} must be suspended in the host course after the activity is gone`
-      ).toBe(1);
-      expect(
-        await activeParticipantRows(page, env.lifecycleHostCourseId, username),
-        `${username} must have no active host enrolment left`
+        await participantRows(page, env.lifecycleHostCourseId, username),
+        `${username} must be gone from the host course after the activity is deleted`
       ).toBe(0);
     }
 
@@ -257,47 +243,6 @@ async function chooseAutocomplete(page: Page, selectId: string, label: string): 
   // The widget writes the choice back into the hidden select; asserting that
   // makes a silently ignored click fail here rather than three steps later.
   await expect(page.locator(`#${selectId}`)).not.toHaveValue('');
-}
-
-/**
- * Participant rows for one username whose enrolment is SUSPENDED.
- *
- * Moodle marks a suspended participant's row with the dimmed class rather than
- * only with a translated word, so this works whatever the site language is.
- *
- * @param page The page to use.
- * @param courseid The course whose participants are listed.
- * @param username The username to look for.
- * @returns The number of matching suspended rows.
- */
-async function suspendedParticipantRows(page: Page, courseid: string, username: string): Promise<number> {
-  await page.goto(`/user/index.php?id=${courseid}`);
-  await expect(page.locator('#participantsform')).toBeVisible();
-  return page
-    .locator(`#participantsform tbody tr:has-text("${username}@example.invalid")`)
-    .filter({ has: page.locator(SUSPENDED_BADGE) })
-    .count();
-}
-
-/**
- * Participant rows for one username whose enrolment is ACTIVE.
- *
- * The counterpart of the above: a row that is present but dimmed must not
- * count as access. Checking only for presence, or only for absence, would let
- * a suspended and an active enrolment pass for the same thing.
- *
- * @param page The page to use.
- * @param courseid The course whose participants are listed.
- * @param username The username to look for.
- * @returns The number of matching active rows.
- */
-async function activeParticipantRows(page: Page, courseid: string, username: string): Promise<number> {
-  await page.goto(`/user/index.php?id=${courseid}`);
-  await expect(page.locator('#participantsform')).toBeVisible();
-  return page
-    .locator(`#participantsform tbody tr:has-text("${username}@example.invalid")`)
-    .filter({ hasNot: page.locator(SUSPENDED_BADGE) })
-    .count();
 }
 
 /**

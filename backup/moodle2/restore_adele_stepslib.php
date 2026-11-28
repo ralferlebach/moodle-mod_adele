@@ -51,14 +51,62 @@ class restore_adele_activity_structure_step extends restore_activity_structure_s
 
         $data = (object)$data;
         $data->course = $this->get_courseid();
+        // The teacher access mode travels with the activity; an older backup
+        // has none (the column's default, existing_only, applies), and a value
+        // that is no mode becomes existing_only. Whether a mode acts is the
+        // site's decision on this site (teacher_access_mode::effective()).
+        if (
+            isset($data->teachercourseaccessmode)
+            && !\mod_adele\local\teacher_access_mode::is_mode($data->teachercourseaccessmode)
+        ) {
+            $data->teachercourseaccessmode = \mod_adele\local\teacher_access_mode::EXISTING_ONLY;
+        }
+        // The host enrolment mode travels too (mod_adele #41); an older backup
+        // has none and gets the column's default, visible.
+        if (isset($data->hostenrolmentmode) && !in_array($data->hostenrolmentmode, ['visible', 'hidden', 'none'], true)) {
+            $data->hostenrolmentmode = 'visible';
+        }
+        // The live markers travel with the activity (local_adele #17). An older
+        // backup has none: off, 5 minutes - the documented defaults. A value out
+        // of range is brought into it.
+        $data->livemarkers = empty($data->livemarkers) ? 0 : 1;
+        $data->livewindow = \mod_adele\local\live_settings::clamp_window(
+            isset($data->livewindow) ? (int) $data->livewindow : \mod_adele\local\live_settings::DEFAULT_WINDOW
+        );
+        // The grantor of a teacher mode is a person of this site only if the
+        // restore maps them; otherwise nobody, and the mode gives no
+        // enrolments until somebody with authority saves it (local_adele #600).
+        $data->teachercourseaccessgrantor = empty($data->teachercourseaccessgrantor)
+            ? 0
+            : (int) $this->get_mappingid('user', $data->teachercourseaccessgrantor, 0);
+        // The learning path is a site-wide record of local_adele, not part of
+        // the backup (mod_adele #29). On this site and still there: the same
+        // path. Otherwise the number would point at an unrelated path or at
+        // none, so the activity comes back without a path, and the restore
+        // log says so; nobody is subscribed or enrolled through it until a
+        // teacher chooses a path.
+        $pathid = (int) ($data->learningpathid ?? 0);
+        if (
+            $pathid
+            && (!$this->get_task()->is_samesite()
+                || !$DB->record_exists('local_adele_learning_paths', ['id' => $pathid]))
+        ) {
+            $this->log(get_string('restore_pathunset', 'mod_adele', $pathid), \backup::LOG_WARNING);
+            $data->learningpathid = 0;
+        }
         $newitemid = $DB->insert_record('adele', $data);
         $this->apply_activity_instance($newitemid);
     }
 
     /**
-     * Defines steps for the backup process.
+     * Nothing to do once this step has run (mod_adele #29): the activity has
+     * no files besides the intro and no records of its own besides {adele}.
+     * Subscriptions and host enrolments are not restored from the backup at
+     * all - they are derived from the target site once the whole restore is
+     * done, in after_restore(), when the course's enrolments exist again.
      */
     protected function after_execute() {
+        $this->add_related_files('mod_adele', 'intro', null);
     }
 
     /**

@@ -31,8 +31,10 @@
  *
  *   P1  a learner sees the own status, progress and percentage - and nothing
  *       of the other learner, neither on the page nor in what the server sends
- *   P2  with "results of all other participants" both learners are listed
- *       with the correct values; the teacher reaches a learner's detail view
+ *   P2  with "results of all other participants" (no groups): teachers list
+ *       both learners, participants too - without a way into anybody's
+ *       path (decision 2026-11-22: the setting applies without groups only);
+ *       the teacher reaches a learner's detail view
  *   P3  the same question for every role (table below); the teacher without
  *       editing rights sees what the teacher sees and changes nothing (#39)
  *   P4  a participant asks for foreign data directly: foreign row, foreign
@@ -119,7 +121,7 @@ async function embedding(page: Page, which: 'OWN' | 'ALL' | 'SECOND'): Promise<s
   if (!page.url().includes('/mod/adele/view.php')) {
     return 'no access';
   }
-  const table = page.locator('#adele-userlist-table');
+  const table = page.locator('[data-testid="adele-userlist-table"]');
   await expect(table).toBeVisible({ timeout: 60_000 });
   await expect(table.locator('tbody tr').first()).toBeVisible({ timeout: 30_000 });
   await page.waitForLoadState('networkidle');
@@ -224,7 +226,7 @@ test.describe('ADELE-E2E-P — learner data in a course that embeds a path', () 
           }
         });
         await page.goto(`/mod/adele/view.php?id=${fixture('ADELE_FIXTURE_P_CM_OWN')}`);
-        await expect(page.locator('#adele-userlist-table tbody tr').first()).toBeVisible({ timeout: 60_000 });
+        await expect(page.locator('[data-testid="adele-userlist-table"] tbody tr').first()).toBeVisible({ timeout: 60_000 });
         await page.waitForLoadState('networkidle');
         page.removeAllListeners('response');
 
@@ -236,12 +238,36 @@ test.describe('ADELE-E2E-P — learner data in a course that embeds a path', () 
     }
   });
 
-  test('P2: with "results of all other participants" both learners are listed, correctly', { tag: ['@story:P2'] }, async ({ page }) => {
-    await test.step('a participant sees both learners with status and percentage', async () => {
-      await loginAsPerson(page, 'A');
-      await expect.poll(() => embedding(page, 'ALL'), { timeout: 60_000, intervals: [2_000, 5_000] })
-        .toBe(`participant view: ${ALPHA_ROW} ; ${BETA_ROW}`);
-    });
+  test('P2: with "results of all other participants" teachers and participants list both learners', { tag: ['@story:P2'] }, async ({ page }) => {
+    await test.step('without groups "all" shows a participant both learners - no link, no ids (decision 2026-11-22)',
+      async () => {
+        await loginAsPerson(page, 'A');
+        await expect.poll(() => embedding(page, 'ALL'), { timeout: 60_000, intervals: [2_000, 5_000] })
+          .toBe(`participant view: ${ALPHA_ROW} ; ${BETA_ROW}`);
+        // What the server sent: Beta's row without Beta's id or username.
+        const answer = await callService(page, 'local_adele_get_user_path_relations', {
+          userid: 0,
+          learningpathid: pathId(),
+          contextid: contextId('CM_ALL'),
+        });
+        const beta = (answer.data as { id: number; username: string; lastname: string }[])
+          .find((row) => row.lastname === BETA);
+        expect(beta, "Beta's row").toBeTruthy();
+        expect(beta!.id, "no user id of Beta").toBeLessThan(0);
+        expect(beta!.username, 'no username of Beta').toBe('');
+        expect((answer.data as { id: number }[]).map((row) => row.id), "Beta's id nowhere").not.toContain(userId('B'));
+        // Not navigable: no link or button in any row (re-audit 2026-11-22).
+        expect(await page.locator('[data-testid="adele-userlist-table"] tbody tr').count()).toBeGreaterThanOrEqual(2);
+        await expect(page.locator('[data-testid="adele-userlist-table"] tbody').locator('a, button, [role="link"]'))
+          .toHaveCount(0);
+        // The masked id of Beta's row opens nothing either.
+        const path = await callService(page, 'local_adele_get_user_path_relation', {
+          learningpathid: pathId(),
+          userpathid: beta!.id,
+          contextid: contextId('CM_ALL'),
+        });
+        expect(JSON.stringify(path), "Beta's path through the masked id").not.toContain(BETA);
+      });
 
     await test.step('the teacher sees both in either embedding, with a way into the detail view', async () => {
       await loginAsPerson(page, 'TEACHER');
@@ -270,7 +296,7 @@ test.describe('ADELE-E2E-P — learner data in a course that embeds a path', () 
 
     await test.step("the teacher opens Beta's detail view: Beta's node states", async () => {
       expect(await embedding(page, 'ALL')).toBe(`teacher view: ${ALPHA_ROW} | link ; ${BETA_ROW} | link`);
-      await page.locator('#adele-userlist-table tbody tr').filter({ hasText: BETA }).getByRole('link').first().click();
+      await page.locator('[data-testid="adele-userlist-table"] tbody tr').filter({ hasText: BETA }).getByRole('link').first().click();
       for (const [nodeid, status] of [['dndnode_1', 'completed'], ['dndnode_2', 'completed'], ['dndnode_3', 'accessible']]) {
         await expect(page.locator(`[data-testid="learningpath-node-${nodeid}"]`), `Beta's ${nodeid}`)
           .toHaveAttribute('data-status', status, { timeout: 60_000 });
@@ -279,7 +305,6 @@ test.describe('ADELE-E2E-P — learner data in a course that embeds a path', () 
   });
 
   test('P3: what each role sees, as implemented', { tag: ['@story:P3'] }, async ({ page }) => {
-    const both = `${ALPHA_ROW} ; ${BETA_ROW}`;
     const bothlinked = `${ALPHA_ROW} | link ; ${BETA_ROW} | link`;
     // Who            "own results"                      "all results"                 roster from server  Beta's detail from server.
     const matrix: [string, string, string, string, string, string][] = [
@@ -294,9 +319,12 @@ test.describe('ADELE-E2E-P — learner data in a course that embeds a path', () 
       ['TUTOR', `teacher view: ${bothlinked}`, `teacher view: ${bothlinked}`, `${ALPHA}, ${BETA}`, BETA,
         'teacher without editing rights'],
       // Collaborator of THIS path, enrolled as a participant: a participant -
-      // the own row only where the embedding says so, never a detail. Working
-      // on the path adds nothing (used to: the full roster and Beta's snapshot).
-      ['COLLABORATOR', 'participant view: neither learner', `participant view: ${both}`, 'neither learner',
+      // only own data (here: none, no path of their own), never a detail.
+      // Working on the path adds nothing (used to: the full roster and Beta's
+      // snapshot). "All results" without groups shows participants the
+      // activity's learners, without a way into their paths (decision
+      // 2026-11-22).
+      ['COLLABORATOR', 'participant view: neither learner', `participant view: ${ALPHA_ROW} ; ${BETA_ROW}`, 'neither learner',
         'denied (nopermissions)', 'collaborator of the path, a participant here'],
       // The ADELE system roles are in no course: no page shows them the
       // embedding, and the server answers neither - not the manager (used
@@ -304,8 +332,9 @@ test.describe('ADELE-E2E-P — learner data in a course that embeds a path', () 
       ['MANAGER', 'no access', 'no access', 'denied (nopermissions)', 'denied (nopermissions)', 'ADELE manager'],
       ['ASSISTANT', 'no access', 'no access', 'denied (nopermissions)', 'denied (nopermissions)',
         'ADELE assistant (editor of another path)'],
-      // Participant: the own row, or all - as the embedding says; never a detail.
-      ['A', `participant view: ${ALPHA_ROW}`, `participant view: ${both}`, ALPHA, 'denied (nopermissions)',
+      // Participant: the own row with "only own results", both learners
+      // with "all results" (no groups, decision 2026-11-22); never a detail.
+      ['A', `participant view: ${ALPHA_ROW}`, `participant view: ${ALPHA_ROW} ; ${BETA_ROW}`, ALPHA, 'denied (nopermissions)',
         'participant'],
       // People of another course: nothing.
       ['OUTSIDER', 'no access', 'no access', 'denied (nopermissions)', 'denied (nopermissions)',
@@ -329,7 +358,7 @@ test.describe('ADELE-E2E-P — learner data in a course that embeds a path', () 
     const openBeta = async (who: string) => {
       await loginAsPerson(page, who);
       expect(await embedding(page, 'OWN')).toContain(`${BETA_ROW} | link`);
-      await page.locator('#adele-userlist-table tbody tr').filter({ hasText: BETA }).getByRole('link').first().click();
+      await page.locator('[data-testid="adele-userlist-table"] tbody tr').filter({ hasText: BETA }).getByRole('link').first().click();
       await expect(node('dndnode_3')).toHaveAttribute('data-status', 'accessible', { timeout: 60_000 });
     };
 
@@ -381,7 +410,7 @@ test.describe('ADELE-E2E-P — learner data in a course that embeds a path', () 
     await test.step("the direct URL of Beta's detail view shows the own path, not Beta's", async () => {
       await page.goto(`/mod/adele/view.php?id=${fixture('ADELE_FIXTURE_P_CM_OWN')}` +
         `#/learningpaths/edit/${pathId()}/${userId('B')}`);
-      await expect(page.locator('#adele-userlist-table tbody tr').first()).toBeVisible({ timeout: 60_000 });
+      await expect(page.locator('[data-testid="adele-userlist-table"] tbody tr').first()).toBeVisible({ timeout: 60_000 });
       await page.waitForLoadState('networkidle');
       await expect(page.locator('#region-main')).not.toContainText(BETA);
       // Alpha's states (T02 merely accessible), not Beta's (T02 completed).

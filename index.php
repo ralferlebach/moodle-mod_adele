@@ -33,10 +33,7 @@ require_course_login($course);
 
 $coursecontext = context_course::instance($course->id);
 
-
-$event = \mod_adele\event\course_module_instance_list_viewed::create(
-    ['context' => $modulecontext]
-);
+$event = \mod_adele\event\course_module_instance_list_viewed::create(['context' => $coursecontext]);
 $event->add_record_snapshot('course', $course);
 $event->trigger();
 
@@ -44,48 +41,42 @@ $PAGE->set_url('/mod/adele/index.php', ['id' => $id]);
 $PAGE->set_title(format_string($course->fullname));
 $PAGE->set_heading(format_string($course->fullname));
 $PAGE->set_context($coursecontext);
-
-echo $OUTPUT->header();
-
-$modulenameplural = get_string('modulenameplural', 'mod_adele');
-echo $OUTPUT->heading($modulenameplural);
+$PAGE->set_pagelayout('incourse');
 
 $adeles = get_all_instances_in_course('adele', $course);
-
 if (empty($adeles)) {
-    notice(get_string('no$adeleinstances', 'mod_adele'), new moodle_url('/course/view.php', ['id' => $course->id]));
+    redirect(
+        new moodle_url('/course/view.php', ['id' => $course->id]),
+        get_string('noadeleinstances', 'mod_adele'),
+        null,
+        \core\output\notification::NOTIFY_INFO
+    );
 }
 
-$table = new html_table();
-$table->attributes['class'] = 'generaltable mod_index';
+echo $OUTPUT->header();
+echo $OUTPUT->heading(get_string('modulenameplural', 'mod_adele'));
 
-if ($course->format == 'weeks') {
-    $table->head  = [get_string('week'), get_string('name')];
+$usesections = course_format_uses_sections($course->format);
+
+$table = new html_table();
+$table->id = 'mod-adele-index';
+$table->attributes['class'] = 'generaltable mod_index';
+if ($usesections) {
+    $table->head = [get_string('section'), get_string('name')];
     $table->align = ['center', 'left'];
-} else if ($course->format == 'topics') {
-    $table->head  = [get_string('topic'), get_string('name')];
-    $table->align = ['center', 'left', 'left', 'left'];
 } else {
-    $table->head  = [get_string('name')];
-    $table->align = ['left', 'left', 'left'];
+    $table->head = [get_string('name')];
+    $table->align = ['left'];
 }
 
 foreach ($adeles as $adele) {
-    if (!$adele->visible) {
-        $link = html_writer::link(
-            new moodle_url('/mod/adele/view.php', ['id' => $adele->coursemodule]),
-            format_string($adele->name, true),
-            ['class' => 'dimmed']
-        );
-    } else {
-        $link = html_writer::link(
-            new moodle_url('/mod/adele/view.php', ['id' => $adele->coursemodule]),
-            format_string($adele->name, true)
-        );
-    }
-
-    if ($course->format == 'weeks' || $course->format == 'topics') {
-        $table->data[] = [$adele->section, $link];
+    $link = html_writer::link(
+        new moodle_url('/mod/adele/view.php', ['id' => $adele->coursemodule]),
+        format_string($adele->name, true, ['context' => context_module::instance($adele->coursemodule)]),
+        $adele->visible ? [] : ['class' => 'dimmed']
+    );
+    if ($usesections) {
+        $table->data[] = [get_section_name($course, $adele->section), $link];
     } else {
         $table->data[] = [$link];
     }

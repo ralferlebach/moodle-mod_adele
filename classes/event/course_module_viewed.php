@@ -24,6 +24,7 @@
  */
 
 namespace mod_adele\event;
+
 /**
  * Class course_module_viewed
  *

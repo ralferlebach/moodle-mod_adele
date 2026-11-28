@@ -23,7 +23,8 @@
  * @license     https://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 
-use local_adele\learning_paths;
+use mod_adele\local\path_choice;
+use mod_adele\local\teacher_access_mode;
 
 defined('MOODLE_INTERNAL') || die();
 
@@ -82,12 +83,20 @@ class mod_adele_mod_form extends moodleform_mod {
             '</a>'
         );
 
-        $records = learning_paths::get_editable_learning_paths();
-
-        $select = [];
-        $select[0] = get_string('noselection', 'form');
-        foreach ($records as $record) {
-            $select[$record->id] = $record->name;
+        // The paths the person may edit, and the one an existing activity
+        // embeds: it can be kept by whoever may edit the activity, even
+        // without editing rights on the path (mod_adele #43). Validation
+        // decides on the server what may be set.
+        $stored = $this->stored_learningpathid();
+        $select = [0 => get_string('noselection', 'form')] + path_choice::options($stored);
+        if ($stored && !isset($select[$stored])) {
+            // Embedded, but the path is gone: say so, and let a new one be chosen.
+            $mform->addElement(
+                'static',
+                'learningpathmissing',
+                '',
+                \html_writer::div(get_string('mform_path_missing_stored', 'mod_adele'), 'alert alert-warning')
+            );
         }
 
         $options = [
@@ -122,6 +131,8 @@ class mod_adele_mod_form extends moodleform_mod {
         ];
         $mform->addElement('select', 'userlist', get_string('mform_select_userlist', 'mod_adele'), $userlist);
         $mform->setDefault('userlist', 2);
+        // The setting applies without groups only (decision 2026-11-22); the help says so.
+        $mform->addHelpButton('userlist', 'mform_select_userlist', 'mod_adele');
 
         $participantslist = [
           1 => get_string('mform_options_participantslist_this_course', 'mod_adele'),
@@ -169,8 +180,95 @@ class mod_adele_mod_form extends moodleform_mod {
             [['2', '3']]
         );
 
+        // Under "More options" of this section (Moodle's "Show more ..."): how
+        // teachers reach the node courses they cannot open yet (issue
+        // local_adele #600). Offered are the modes the site allows - and the
+        // activity's own stored mode, if the site no longer allows it, so that
+        // saving the form for another reason does not change it silently.
+        // The teacher enrolment modes follow the site's policy (TP4): what the
+        // person editing may not choose is locked (policy 1) or not offered.
+        global $USER;
+        $stored = $this->stored_teachercourseaccessmode();
+        $pathid = (int) ($this->current->learningpathid ?? 0);
+        $select = $mform->createElement(
+            'select',
+            'teachercourseaccessmode',
+            get_string('teachercourseaccessmode', 'mod_adele')
+        );
+        foreach (teacher_access_mode::form_options($stored, $pathid, (int) $USER->id, $this->mode_context()) as $mode => $option) {
+            $select->addOption($option['label'], $mode, $option['disabled'] ? ['disabled' => 'disabled'] : null);
+        }
+        $mform->addElement($select);
+        $mform->addHelpButton('teachercourseaccessmode', 'teachercourseaccessmode', 'mod_adele');
+        $mform->setType('teachercourseaccessmode', PARAM_ALPHAEXT);
+        $mform->setDefault('teachercourseaccessmode', $stored ?? teacher_access_mode::site_default());
+        if (teacher_access_mode::is_locked($stored, $pathid, (int) $USER->id, $this->mode_context())) {
+            $mform->hardFreeze('teachercourseaccessmode');
+            $mform->addElement(
+                'static',
+                'teachercourseaccessmode_locked_hint',
+                '',
+                \html_writer::div(
+                    get_string('teachercourseaccessmode_locked_hint', 'mod_adele'),
+                    'alert alert-info mb-0',
+                    ['data-testid' => 'teachercourseaccessmode-locked']
+                )
+            );
+        } else if ($stored !== null && !teacher_access_mode::is_allowed($stored)) {
+            // Not tucked away: whoever edits the activity is to see it.
+            $mform->addElement(
+                'static',
+                'teachercourseaccessmode_notallowed_hint',
+                '',
+                \html_writer::div(
+                    get_string('teachercourseaccessmode_notallowed_hint', 'mod_adele'),
+                    'alert alert-warning mb-0',
+                    ['data-testid' => 'teachercourseaccessmode-notallowed']
+                )
+            );
+        } else {
+            $mform->setAdvanced('teachercourseaccessmode');
+        }
+
+        // Live activity markers in the teachers' view (local_adele #14, #17).
+        $mform->addElement('header', 'livemarkersheader', get_string('livemarkersheader', 'mod_adele'));
+        $mform->addElement('advcheckbox', 'livemarkers', get_string('livemarkers', 'mod_adele'));
+        $mform->addHelpButton('livemarkers', 'livemarkers', 'mod_adele');
+        $mform->setDefault('livemarkers', 0);
+        $mform->addElement('text', 'livewindow', get_string('livewindow', 'mod_adele'), ['size' => 3]);
+        $mform->addHelpButton('livewindow', 'livewindow', 'mod_adele');
+        $mform->setType('livewindow', PARAM_RAW_TRIMMED);
+        $mform->setDefault('livewindow', \mod_adele\local\live_settings::DEFAULT_WINDOW);
+        $mform->hideIf('livewindow', 'livemarkers', 'notchecked');
+
         $this->standard_coursemodule_elements();
+        $this->userlist_only_without_groups();
         $this->add_action_buttons();
+    }
+
+    /**
+     * "Participant results" is shown and applies only without groups
+     * (decision 2026-11-22): with separate or visible groups learners see
+     * the ranking of their own group(s) whatever the stored value says
+     * (local_adele #12), so the field is hidden there. A group mode the
+     * course forces cannot change in this form: the field is left out and
+     * the stored value kept, as core does for the grouping.
+     */
+    private function userlist_only_without_groups(): void {
+        global $COURSE;
+        $mform = $this->_form;
+        if (!empty($COURSE->groupmodeforce)) {
+            if ((int) $COURSE->groupmode !== NOGROUPS) {
+                $mform->removeElement('userlist');
+                $mform->addElement('hidden', 'userlist');
+                $mform->setType('userlist', PARAM_INT);
+                $mform->setDefault('userlist', 2);
+            }
+            return;
+        }
+        if ($mform->elementExists('groupmode')) {
+            $mform->hideIf('userlist', 'groupmode', 'neq', NOGROUPS);
+        }
     }
 
     /**
@@ -182,15 +280,82 @@ class mod_adele_mod_form extends moodleform_mod {
     public function validation($data, $files): array {
         $errors = parent::validation($data, $files);
 
-        if (empty($data['learningpathid'])) {
-            $errors['learningpathid'] = get_string('mform_options_required', 'mod_adele');
+        $reason = path_choice::check((int) ($data['learningpathid'] ?? 0), $this->stored_learningpathid());
+        if ($reason !== path_choice::OK) {
+            $errors['learningpathid'] = get_string($reason, 'mod_adele');
+        }
+
+        // The window is checked here, not in the browser (local_adele #17).
+        if (!empty($data['livemarkers']) || isset($data['livewindow'])) {
+            if (!\mod_adele\local\live_settings::is_valid_window($data['livewindow'] ?? '')) {
+                $errors['livewindow'] = get_string('livewindow_invalid', 'mod_adele', [
+                    'min' => \mod_adele\local\live_settings::MIN_WINDOW,
+                    'max' => \mod_adele\local\live_settings::MAX_WINDOW,
+                ]);
+            }
         }
 
         if (empty($data['participantslist'])) {
             $errors['participantslist'] = get_string('mform_options_required', 'mod_adele');
         }
 
+        // The server decides, not the browser: only an allowed mode, or the
+        // stored one unchanged (issue local_adele #600).
+        global $USER;
+        if (
+            isset($data['teachercourseaccessmode'])
+            && !teacher_access_mode::may_save(
+                $data['teachercourseaccessmode'],
+                $this->stored_teachercourseaccessmode(),
+                (int) ($data['learningpathid'] ?? 0),
+                (int) $USER->id,
+                $this->mode_context()
+            )
+        ) {
+            $errors['teachercourseaccessmode'] = teacher_access_mode::is_allowed((string) $data['teachercourseaccessmode'])
+                ? get_string('teachercourseaccessmode_noauthority', 'mod_adele')
+                : get_string('teachercourseaccessmode_refused', 'mod_adele');
+        }
+
         return $errors;
+    }
+
+    /**
+     * The context the authority for a teacher mode is checked in: the
+     * activity's, or the course's for a new activity.
+     *
+     * @return \context
+     */
+    private function mode_context(): \context {
+        $cm = $this->get_coursemodule();
+        return $cm ? \context_module::instance($cm->id) : \context_course::instance($this->get_course()->id);
+    }
+
+    /**
+     * The learning path the activity embeds now - 0 for a new one.
+     *
+     * @return int
+     */
+    private function stored_learningpathid(): int {
+        global $DB;
+        if (empty($this->_instance)) {
+            return 0;
+        }
+        return (int) $DB->get_field('adele', 'learningpathid', ['id' => $this->_instance]);
+    }
+
+    /**
+     * The teacher access mode the activity has stored - null for a new one.
+     *
+     * @return string|null
+     */
+    private function stored_teachercourseaccessmode(): ?string {
+        global $DB;
+        if (empty($this->_instance)) {
+            return null;
+        }
+        $stored = $DB->get_field('adele', 'teachercourseaccessmode', ['id' => $this->_instance]);
+        return $stored === false ? null : (string) $stored;
     }
 
     /**

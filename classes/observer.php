@@ -139,6 +139,21 @@ class mod_adele_observer {
     }
 
     /**
+     * Observer for a changed enrolment - suspended, reactivated, its time
+     * window moved: only an effective enrolment is a source (mod_adele #30),
+     * so the change is evaluated like a new enrolment. Becoming effective
+     * subscribes (source "this course") and grants host access (sources
+     * 2/3); ceasing to be effective takes host access back. Both are
+     * idempotent: a second, identical change finds nothing to do.
+     *
+     * @param base $data
+     * @return base
+     */
+    public static function user_enrolment_updated($data) {
+        return self::user_enrolment_created($data);
+    }
+
+    /**
      * Observer for role_assigned and role_unassigned in a course: whether
      * somebody takes part in a course is a matter of the role, so a role
      * change is re-evaluated exactly like an enrolment (local_adele #587).
@@ -445,5 +460,20 @@ class mod_adele_observer {
             return;
         }
         \local_adele\enrol_state::warn_enrol_adele_missing();
+    }
+
+    /**
+     * A learning path was saved or deleted: the teachers' node course
+     * enrolments of the activities embedding it that no longer hold go
+     * (local_adele #600, TP4).
+     *
+     * @param \core\event\base $event learnpath_updated or learnpath_deleted.
+     * @return void
+     */
+    public static function learnpath_changed(\core\event\base $event): void {
+        $learningpathid = (int) ($event->other['learningpathid'] ?? $event->objectid);
+        if ($learningpathid) {
+            \mod_adele\local\teacher_enrolment::reconcile_path($learningpathid);
+        }
     }
 }

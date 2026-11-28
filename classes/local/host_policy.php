@@ -247,28 +247,12 @@ class host_policy {
      * @return bool
      */
     public static function has_foreign_enrolment(int $userid, array $courseids): bool {
-        global $DB;
-
         if (!$courseids) {
             return false;
         }
-        [$insql, $inparams] = $DB->get_in_or_equal(array_unique($courseids), SQL_PARAMS_NAMED);
-        $now = \core\di::get(\core\clock::class)->time();
-        $sql = "SELECT DISTINCT e.courseid
-                  FROM {user_enrolments} ue
-                  JOIN {enrol} e ON e.id = ue.enrolid
-                 WHERE ue.userid = :userid
-                       AND e.enrol <> 'adele'
-                       AND e.status = :enabled
-                       AND (ue.timestart = 0 OR ue.timestart <= :now1)
-                       AND (ue.timeend = 0 OR ue.timeend > :now2)
-                       AND e.courseid {$insql}";
-        $enrolledin = $DB->get_fieldset_sql($sql, [
-            'userid' => $userid,
-            'enabled' => ENROL_INSTANCE_ENABLED,
-            'now1' => $now,
-            'now2' => $now,
-        ] + $inparams);
+        // The one definition of an effective enrolment of one's own:
+        // local_adele's (mod_adele #30, #37).
+        $enrolledin = \local_adele\enrol_state::get_effectively_enrolled_courseids($userid, $courseids);
         // ... and only as a PARTICIPANT (local_adele #587): somebody who
         // teaches a course is enrolled in it too, and is not its learner.
         foreach ($enrolledin as $courseid) {
@@ -389,21 +373,14 @@ class host_policy {
         }
 
         [$insql, $inparams] = $DB->get_in_or_equal($courseids, SQL_PARAMS_NAMED);
-        $now = \core\di::get(\core\clock::class)->time();
+        [$effsql, $effparams] = \local_adele\enrol_state::effective_enrolment_sql();
         $userids = $DB->get_fieldset_sql(
             "SELECT DISTINCT ue.userid
                FROM {user_enrolments} ue
                JOIN {enrol} e ON e.id = ue.enrolid
-              WHERE e.enrol <> 'adele'
-                    AND e.status = :enabled
-                    AND (ue.timestart = 0 OR ue.timestart <= :now1)
-                    AND (ue.timeend = 0 OR ue.timeend > :now2)
+              WHERE {$effsql}
                     AND e.courseid {$insql}",
-            [
-                'enabled' => ENROL_INSTANCE_ENABLED,
-                'now1' => $now,
-                'now2' => $now,
-            ] + $inparams
+            $effparams + $inparams
         );
         return array_map('intval', $userids);
     }
@@ -491,6 +468,27 @@ class host_policy {
                 return 1;
             default:
                 return 0;
+        }
+    }
+
+    /**
+     * The site changed whether suspended enrolments count as a source
+     * (mod_adele/sourcesincludesuspended, mod_adele #30): every activity
+     * applies its sources again - who now counts is subscribed and given
+     * host access - and its host access is reconciled, so access that only
+     * a suspended enrolment carried goes at once. Subscriptions nothing
+     * carries any more follow enrol_adele's usual rule (grace period).
+     *
+     * @return void
+     */
+    public static function sources_setting_changed(): void {
+        global $CFG, $DB;
+        require_once($CFG->dirroot . '/mod/adele/lib.php');
+        foreach ($DB->get_records('adele', null, '', 'id, course, learningpathid') as $instance) {
+            $task = new \mod_adele\task\apply_participant_sources_adhoc();
+            $task->set_custom_data(['instanceid' => (int) $instance->id]);
+            \core\task\manager::queue_adhoc_task($task, true);
+            adele_queue_host_reconcile((int) $instance->learningpathid, (int) $instance->course);
         }
     }
 }

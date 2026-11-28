@@ -37,6 +37,11 @@ function adele_supports($feature) {
         case FEATURE_BACKUP_MOODLE2:
         case FEATURE_COMPLETION_TRACKS_VIEWS:
         case FEATURE_COMPLETION_HAS_RULES:
+            // Group mode and grouping of the activity (local_adele #12, #16): who
+            // sees whose progress follows them, decided on the server
+            // (\mod_adele\local\context_contract).
+        case FEATURE_GROUPS:
+        case FEATURE_GROUPINGS:
             return true;
         default:
             return null;
@@ -66,9 +71,12 @@ function adele_add_instance($moduleinstance, $mform = null) {
     $moduleinstance->participantslist = is_array($moduleinstance->participantslist)
         ? implode(',', $moduleinstance->participantslist)
         : (string) $moduleinstance->participantslist;
+    adele_normalise_live_settings($moduleinstance);
 
     $moduleinstance->completionlearningpathfinished =
         isset($moduleinstance->completionlearningpathfinished) ? $moduleinstance->completionlearningpathfinished : 0;
+
+    adele_resolve_teacher_mode($moduleinstance, null, \context_course::instance((int) $moduleinstance->course));
 
     $id = $DB->insert_record('adele', $moduleinstance);
 
@@ -78,6 +86,47 @@ function adele_add_instance($moduleinstance, $mform = null) {
     );
 
     return $id;
+}
+
+/**
+ * The teacher access mode and its grantor of an activity being saved (local_adele
+ * #600): what may be saved is teacher_access_mode::may_save()'s decision for
+ * the person saving; whatever may not is left as stored. Who saves a teacher
+ * mode with the authority for it becomes its grantor; keeping or lowering it
+ * without that authority leaves the grantor as it was; any other mode has none.
+ *
+ * @param stdClass $moduleinstance The data being saved; changed in place.
+ * @param stdClass|null $previous The stored record (null: a new activity).
+ * @param \context $context Module context, or course context for a new activity.
+ * @return void
+ */
+function adele_resolve_teacher_mode(stdClass $moduleinstance, ?stdClass $previous, \context $context): void {
+    global $USER;
+    $modes = \mod_adele\local\teacher_access_mode::class;
+    $stored = $previous ? (string) $previous->teachercourseaccessmode : null;
+    $pathid = (int) ($moduleinstance->learningpathid ?? ($previous->learningpathid ?? 0));
+    $userid = (int) $USER->id;
+    unset($moduleinstance->teachercourseaccessgrantor);
+
+    if (!$previous) {
+        $submitted = $moduleinstance->teachercourseaccessmode ?? null;
+        $mode = $modes::may_save($submitted, null, $pathid, $userid, $context) ? $submitted : $modes::site_default();
+    } else if (!property_exists($moduleinstance, 'teachercourseaccessmode')) {
+        $mode = $stored;
+    } else if ($modes::may_save($moduleinstance->teachercourseaccessmode, $stored, $pathid, $userid, $context)) {
+        $mode = $moduleinstance->teachercourseaccessmode;
+    } else {
+        $mode = $stored;
+    }
+    $moduleinstance->teachercourseaccessmode = $mode;
+
+    if (!$modes::is_teacher_mode($mode)) {
+        $moduleinstance->teachercourseaccessgrantor = 0;
+    } else if ($modes::may_configure($mode, $pathid, $userid, $context)) {
+        $moduleinstance->teachercourseaccessgrantor = $userid;
+    } else if (!$previous) {
+        $moduleinstance->teachercourseaccessgrantor = 0;
+    }
 }
 
 /**
@@ -100,17 +149,33 @@ function adele_update_instance($moduleinstance, $mform = null) {
     // an activity moved from learning path A to B leaves A behind entirely:
     // nothing afterwards knows that A was ever embedded here, so nobody
     // revokes the access A granted (issue #8).
-    $previous = $DB->get_record('adele', ['id' => $moduleinstance->id], 'id, course, learningpathid');
+    $previous = $DB->get_record(
+        'adele',
+        ['id' => $moduleinstance->id],
+        'id, course, learningpathid, teachercourseaccessmode, teachercourseaccessgrantor'
+    );
+    if ($previous && !empty($moduleinstance->coursemodule)) {
+        adele_resolve_teacher_mode($moduleinstance, $previous, \context_module::instance((int) $moduleinstance->coursemodule));
+    } else {
+        unset($moduleinstance->teachercourseaccessmode, $moduleinstance->teachercourseaccessgrantor);
+    }
 
     // Same defensive fix as adele_add_instance() above.
     $moduleinstance->participantslist = is_array($moduleinstance->participantslist)
         ? implode(',', $moduleinstance->participantslist)
         : (string) $moduleinstance->participantslist;
+    adele_normalise_live_settings($moduleinstance);
 
     $moduleinstance->completionlearningpathfinished =
         isset($moduleinstance->completionlearningpathfinished) ? $moduleinstance->completionlearningpathfinished : 0;
 
     $result = $DB->update_record('adele', $moduleinstance);
+
+    // Teachers' node course enrolments of this activity follow its settings:
+    // a lowered or changed mode, another path (local_adele #600, TP4).
+    if (!empty($moduleinstance->coursemodule)) {
+        \mod_adele\local\teacher_enrolment::reconcile_cm((int) $moduleinstance->coursemodule);
+    }
 
     // The course property is not guaranteed to be present on every code
     // path that reaches an update (some callers build a partial object), so
@@ -144,6 +209,13 @@ function adele_delete_instance($id) {
     $exists = $DB->get_record('adele', ['id' => $id]);
     if (!$exists) {
         return false;
+    }
+
+    // Deleted is gone: the teachers' node course enrolments this activity gave
+    // go with it - and only those (local_adele #600, TP4).
+    $cm = get_coursemodule_from_instance('adele', $id);
+    if ($cm) {
+        \mod_adele\local\teacher_enrolment::remove_cm((int) $cm->id);
     }
 
     $DB->delete_records('adele', ['id' => $id]);
@@ -232,6 +304,9 @@ function mod_adele_cm_info_view(cm_info $cm) {
         $alisecompatible = local_adele::get_internal_quiz_id($learningpathmod->learningpathid, $PAGE->course->id);
         $modulecontext = context_module::instance($cm->id);
         $mode = \mod_adele\local\view_mode::for_context($modulecontext);
+        // The setting "Participant results" applies without groups only (decision
+        // 2026-11-22); the client's mirror of it gets the value in effect.
+        $userlist = (int) groups_get_activity_groupmode($cm) === NOGROUPS ? (int) $learningpathmod->userlist : 1;
         if ($mode['view'] === 'teacher') {
             if ($alisecompatible['alisecompatible']) {
                 $html = $OUTPUT->render_from_template(
@@ -241,12 +316,13 @@ function mod_adele_cm_info_view(cm_info $cm) {
                     'contextid' => $modulecontext->id,
                     'quizsetting' => get_config('local_adele', 'quizsettings'),
                     'learningpath' => $learningpathmod->learningpathid,
-                    'userlist' => $learningpathmod->userlist,
+                    'userlist' => $userlist,
                     'view' => "teacher",
                     // Without the right to change a learner's path the view is read-only (#39).
                     'readonly' => $mode['readonly'],
                     'wwwroot' => $CFG->wwwroot,
                     'version' => $CFG->version,
+                    'pathviewsettings' => \local_adele\path_view_settings::for_template(),
                     ]
                 );
             } else {
@@ -266,10 +342,11 @@ function mod_adele_cm_info_view(cm_info $cm) {
                     'contextid' => $modulecontext->id,
                     'quizsetting' => get_config('local_adele', 'quizsettings'),
                     'learningpath' => $learningpathmod->learningpathid,
-                    'userlist' => $learningpathmod->userlist,
+                    'userlist' => $userlist,
                     'view' => "student",
                     'wwwroot' => $CFG->wwwroot,
                     'version' => $CFG->version,
+                    'pathviewsettings' => \local_adele\path_view_settings::for_template(),
                     ]
                 );
             } else {
@@ -314,4 +391,20 @@ function adele_get_coursemodule_info(stdClass $coursemodule) {
     }
 
     return $result;
+}
+
+/**
+ * Live-marker settings as stored (local_adele #17): on/off as 0/1, the window
+ * in whole minutes within 1-60. Missing on an older import path: the defaults.
+ *
+ * @param stdClass $moduleinstance The data to store (changed in place).
+ * @return void
+ */
+function adele_normalise_live_settings(stdClass $moduleinstance): void {
+    $moduleinstance->livemarkers = empty($moduleinstance->livemarkers) ? 0 : 1;
+    $moduleinstance->livewindow = \mod_adele\local\live_settings::clamp_window(
+        isset($moduleinstance->livewindow) && is_numeric($moduleinstance->livewindow)
+            ? (int) $moduleinstance->livewindow
+            : \mod_adele\local\live_settings::DEFAULT_WINDOW
+    );
 }

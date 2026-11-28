@@ -191,6 +191,10 @@ export interface EmbeddingChange {
   addSources?: string[];
   removeSources?: string[];
   results?: string;
+  /** The group mode's label, e.g. "Separate groups" (common module settings). */
+  groupMode?: string;
+  /** Whether "Participant results" must be shown once the change is made, checked before saving. */
+  expectResultsShown?: boolean;
 }
 
 /**
@@ -217,6 +221,19 @@ export async function editEmbedding(page: Page, cmid: string, change: EmbeddingC
   if (change.results) {
     await page.getByRole('combobox', { name: 'Participant results', exact: true }).selectOption({ label: change.results });
   }
+  if (change.groupMode) {
+    // In the collapsed section "Common module settings".
+    const expand = page.getByRole('button', { name: /Expand all|Alle aufklappen/i });
+    if (await expand.isVisible()) {
+      await expand.click();
+    }
+    await page.getByRole('combobox', { name: /^(Group mode|Gruppenmodus)$/ }).selectOption({ label: change.groupMode });
+  }
+  if (change.expectResultsShown !== undefined) {
+    // "Participant results" is shown without groups only (decision 2026-11-22).
+    const field = page.getByRole('combobox', { name: 'Participant results', exact: true });
+    await (change.expectResultsShown ? expect(field).toBeVisible() : expect(field).toBeHidden());
+  }
   await page.getByRole('button', { name: /Save and return to course|Speichern und zum Kurs/i }).click();
   // Saved: Moodle leaves the form for the course page. A validation error
   // would keep the form open instead.
@@ -229,14 +246,18 @@ export async function editEmbedding(page: Page, cmid: string, change: EmbeddingC
  *
  * @param cmid The embedding's course module id.
  */
-export function storedEmbedding(cmid: string): { participantslist: string; hostenrolmentmode: string; userlist: number } {
+export function storedEmbedding(cmid: string): {
+  participantslist: string; hostenrolmentmode: string; userlist: number; teachercourseaccessmode: string;
+} {
   const out = execFileSync('php', ['-r', `
     define('CLI_SCRIPT', true);
     require('config.php');
     $cm = get_coursemodule_from_id('adele', (int) $argv[1], 0, false, MUST_EXIST);
-    $row = $DB->get_record('adele', ['id' => $cm->instance], 'participantslist, hostenrolmentmode, userlist', MUST_EXIST);
+    $row = $DB->get_record('adele', ['id' => $cm->instance],
+      'participantslist, hostenrolmentmode, userlist, teachercourseaccessmode', MUST_EXIST);
     echo json_encode(['participantslist' => (string) $row->participantslist,
-      'hostenrolmentmode' => (string) $row->hostenrolmentmode, 'userlist' => (int) $row->userlist]);`,
+      'hostenrolmentmode' => (string) $row->hostenrolmentmode, 'userlist' => (int) $row->userlist,
+      'teachercourseaccessmode' => (string) $row->teachercourseaccessmode]);`,
   '--', cmid], { cwd: fixture('ADELE_MOODLE_ROOT'), encoding: 'utf8' });
   return JSON.parse(out.trim().split('\n').pop() || '{}');
 }
@@ -267,4 +288,98 @@ export function onPath(username: string, pathid: string): boolean {
     echo $DB->record_exists('local_adele_path_user', ['learning_path_id' => (int) $argv[2], 'user_id' => $user->id]) ? 'yes' : 'no';`,
   '--', username, pathid], { cwd: fixture('ADELE_MOODLE_ROOT'), encoding: 'utf8' });
   return out.trim().endsWith('yes');
+}
+
+/** enrol_adele's nightly sweep, run now. */
+export function nightlySweep(): void {
+  execFileSync('php', ['-d', 'max_input_vars=5000', 'admin/cli/scheduled_task.php',
+    '--execute=\\enrol_adele\\task\\reconcile_task'], { cwd: fixture('ADELE_MOODLE_ROOT'), encoding: 'utf8' });
+}
+
+/**
+ * As administrator: enrol somebody through Moodle's "Enrol users" dialog.
+ *
+ * The picker is a Moodle autocomplete. A click on its suggestion can be lost
+ * while the autocomplete is still being set up or redraws its list (CI
+ * 2026-11-21: the form was sent without a user - "0 enrolled users" - and the
+ * test only noticed later). So the choice is confirmed in the selection area
+ * and made again - by keyboard - until it holds, and the enrolment itself is
+ * confirmed by Moodle's answer: exactly one person enrolled.
+ *
+ * @param page The page, logged in as administrator, on the participants page.
+ * @param name The person's full name.
+ * @param role The role's name in the dialog, e.g. "Student".
+ */
+export async function enrolInDialog(page: Page, name: string, role: string): Promise<void> {
+  await page.getByRole('button', { name: /Enrol users|Nutzer.*einschreiben/i }).first().click();
+  const dialog = page.locator('.modal.show').filter({ has: page.locator('form') }).last();
+  await expect(dialog).toBeVisible({ timeout: 15_000 });
+  const picker = dialog.getByRole('combobox', { name: /Select users|Nutzer.*auswählen/i }).first();
+  // The selection area exists once the autocomplete is set up.
+  const selection = dialog.locator('.form-autocomplete-selection').first();
+  await expect(selection).toBeAttached({ timeout: 15_000 });
+  const pattern = new RegExp(name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+  let attempt = 0;
+  await expect(async () => {
+    if (!pattern.test(await selection.innerText())) {
+      attempt++;
+      await picker.fill('');
+      await picker.fill(name);
+      const option = dialog.getByRole('option', { name: pattern }).first();
+      await option.waitFor({ state: 'visible', timeout: 10_000 });
+      if (attempt === 1) {
+        await option.click();
+      } else {
+        // The way a keyboard user chooses: the first suggestion, then Enter.
+        await picker.press('ArrowDown');
+        await picker.press('Enter');
+      }
+    }
+    await expect(selection).toContainText(pattern, { timeout: 3_000 });
+  }, `${name} chosen in the enrolment dialog`).toPass({ timeout: 60_000 });
+  await dialog.getByRole('combobox', { name: /Assign role|Rolle zuweisen/i }).selectOption({ label: role });
+  const answer = page.waitForResponse((r) => r.url().includes('/enrol/manual/ajax.php') && r.url().includes('action=enrol'));
+  await dialog.getByRole('button', { name: /^Enrol users|Nutzer einschreiben$/i }).click();
+  const body = await (await answer).json();
+  expect(body, `Moodle enrols ${name} as ${role}`).toMatchObject({ success: true, count: 1 });
+  await page.waitForLoadState('networkidle');
+}
+
+/**
+ * As administrator: enrol somebody as a student, on Moodle's participants page.
+ *
+ * @param page The page, logged in as administrator.
+ * @param courseid The course.
+ * @param name The person's full name.
+ */
+export async function enrolAsStudent(page: Page, courseid: string, name: string): Promise<void> {
+  await page.goto(`/user/index.php?id=${courseid}`);
+  await enrolInDialog(page, name, 'Student');
+}
+
+/**
+ * As administrator: end ONE enrolment method of somebody in a course - the
+ * one named - on Moodle's participants page.
+ *
+ * @param page The page.
+ * @param courseid The course.
+ * @param name The person's full name.
+ * @param method The method's name as the page shows it, e.g. "Manual enrolments".
+ */
+export async function unenrolMethod(page: Page, courseid: string, name: string, method: RegExp): Promise<void> {
+  await page.goto(`/user/index.php?id=${courseid}&perpage=5000`);
+  const row = page.locator('table#participants tbody tr').filter({ hasText: name });
+  await expect(row).toHaveCount(1, { timeout: 30_000 });
+  await page.waitForLoadState('networkidle');
+  const field = row.locator('[data-enrolinstancename]').filter({
+    has: page.locator('a[data-action="unenrol"]'),
+  });
+  const names = await field.evaluateAll((els) => els.map((el) => el.getAttribute('data-enrolinstancename') || ''));
+  const index = names.findIndex((n) => method.test(n));
+  expect(index, `a method matching ${method} among ${names.join(', ')}`).toBeGreaterThanOrEqual(0);
+  await field.nth(index).locator('a[data-action="unenrol"]').click();
+  const dialog = page.locator('.modal.show');
+  await expect(dialog).toBeVisible({ timeout: 15_000 });
+  await dialog.getByRole('button', { name: /^(Unenrol|Abmelden)$/ }).click();
+  await page.waitForLoadState('networkidle');
 }

@@ -56,7 +56,7 @@ Feature: As an admin I create adele activity and view it as a student.
       | First name | Last name |
       | Teacher    | Test      |
     ## Validate student 1 accessibility of courses
-    And I click on "Student 1" "link" in the "#adele-userlist-row-r1" "css_element"
+    And I click on "Student 1" "link" in the "[data-testid='adele-userlist-row-r1']" "css_element"
     And I should see "Learning path for:" in the "[id^='local-adele-app']" "css_element"
     And I should see "student1" in the "[id^='local-adele-app'] h5" "css_element"
     And "[data-id=\"dndnode_2\"] .fa-lock" "css_element" should exist

@@ -90,5 +90,65 @@ function xmldb_adele_upgrade($oldversion) {
         upgrade_mod_savepoint(true, 2026072301, 'adele');
     }
 
+    if ($oldversion < 2026100730) {
+        // How teachers reach the node courses they cannot open yet (issue
+        // local_adele #600). Every existing activity starts with the least
+        // privileged mode, existing_only - no migration grants more.
+        $table = new xmldb_table('adele');
+        $field = new xmldb_field(
+            'teachercourseaccessmode',
+            XMLDB_TYPE_CHAR,
+            '32',
+            null,
+            XMLDB_NOTNULL,
+            null,
+            'existing_only',
+            'hostenrolmentmode'
+        );
+
+        if (!$dbman->field_exists($table, $field)) {
+            $dbman->add_field($table, $field);
+        }
+
+        upgrade_mod_savepoint(true, 2026100730, 'adele');
+    }
+
+    if ($oldversion < 2026100732) {
+        // Who chose a teacher enrolment mode with the authority for it (local_adele
+        // #600, TP4). Nobody yet: no activity has such a mode before this version.
+        $table = new xmldb_table('adele');
+        $field = new xmldb_field(
+            'teachercourseaccessgrantor',
+            XMLDB_TYPE_INTEGER,
+            '10',
+            null,
+            XMLDB_NOTNULL,
+            null,
+            '0',
+            'teachercourseaccessmode'
+        );
+        if (!$dbman->field_exists($table, $field)) {
+            $dbman->add_field($table, $field);
+        }
+        upgrade_mod_savepoint(true, 2026100732, 'adele');
+    }
+
+    if ($oldversion < 2026111900) {
+        // Live activity markers per activity (local_adele #14, #17): off, with a
+        // 5-minute window. Existing activities get exactly these defaults; a
+        // value already there (a rerun) is kept.
+        $table = new xmldb_table('adele');
+        $fields = [
+            new xmldb_field('livemarkers', XMLDB_TYPE_INTEGER, '1', null, XMLDB_NOTNULL, null, '0', 'teachercourseaccessgrantor'),
+            new xmldb_field('livewindow', XMLDB_TYPE_INTEGER, '4', null, XMLDB_NOTNULL, null, '5', 'livemarkers'),
+        ];
+        foreach ($fields as $field) {
+            if (!$dbman->field_exists($table, $field)) {
+                $dbman->add_field($table, $field);
+            }
+        }
+        upgrade_mod_savepoint(true, 2026111900, 'adele');
+    }
+
     return true;
 }
